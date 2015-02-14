@@ -22,15 +22,12 @@
 #include <limits>
 
 #include <vector>
-#include <list>
 #include <map>
+//#include <unordered_map>
 
 #include <cstring>
 
 extern "C" {
-#   include "ViennaRNA/data_structures.h"
-#   include "ViennaRNA/utils.h"
-#   include "ViennaRNA/fold_vars.h"
 #   include "ViennaRNA/pair_mat.h"
 #   include "ViennaRNA/loop_energies.h"
 }
@@ -51,17 +48,23 @@ private:
     short *S_;
     short *S1_;
     paramT *params_;
-
     
     LocARNA::Matrix<energy_t> C_;
     std::vector<energy_t> G_;
-    
-    typedef std::pair<size_t,energy_t> entry_t;
-    typedef std::vector< entry_t > entry_list_t;
-    std::vector< entry_list_t > CL_;
+
+public:    
+    typedef std::pair<size_t,energy_t> cand_entry_t;
+    typedef std::vector< cand_entry_t > cand_list_t;
+private:
+    std::vector< cand_list_t > CL_;
 
     std::string structure_;
 
+    size_t ta_count_;
+    size_t ta_erase_;
+    size_t ta_max_;
+
+public:
     /**
      * @brief Trace arrow
      * 
@@ -70,36 +73,48 @@ private:
      * structure. However, each trace arrow is associated to exactly
      * one source.
      */
-    struct trace_arrow_t {
+    class TraceArrow {
 	char type_; //!< type of the arrow (pointing to 'C' or 'G')
-	size_t k_; //!< target row of arrow
-	size_t l_; //!< target column of arrow
-	size_t source_ref_count_; //!< counts how many trace arrows point to the source
-	
+	unsigned char k_; //!< target row of arrow
+	unsigned char l_; //!< target column of arrow
+	uint count_; //!< counts how many trace arrows point to the source
+    public:
 	/**
 	 * @brief construct by target coordinates
 	 * @param type
 	 * @param k
 	 * @param l
 	 */ 
-	trace_arrow_t(char type,
-	     size_t k,
-	     size_t l
-	     )
+	TraceArrow(char type,
+		      size_t i,
+		      size_t j,
+		      size_t k,
+		      size_t l
+		      )
 	    : type_(type),
-	      k_(k),
-	      l_(l),
-	      source_ref_count_(0)
+	      k_(k-i),
+	      l_(j-l),
+	      count_(0)
 	{}
-	
+
 	/**
 	 * @brief empty c'tor
 	 */ 
-	trace_arrow_t() {}
+	TraceArrow() {}
+	
+	bool is_G() const {return type_=='G';}
+	bool is_C() const {return type_=='C';}
+	size_t k(size_t i,size_t j) const {return k_+i;}
+	size_t l(size_t i,size_t j) const {return j-l_;}
+	size_t source_ref_count() const {return count_;}
+	
+	void inc_src() {count_++;}
+	void dec_src() {count_--;}
+
     };
+private:
     
-    
-    typedef std::map<size_t ,trace_arrow_t> trace_arrow_row_map_t;
+    typedef std::map< size_t, TraceArrow >            trace_arrow_row_map_t;
     typedef std::map< size_t, trace_arrow_row_map_t > trace_arrow_map_t;
 
     trace_arrow_map_t trace_arrow_;
@@ -110,8 +125,13 @@ private:
      * @param i source row index
      * @param j source column index
      */
-    const trace_arrow_t &
+    const TraceArrow &
     trace_arrow_from(size_t i, size_t j) const {
+	return trace_arrow_.find(i)->second.find(j)->second;
+    }
+
+    TraceArrow &
+    trace_arrow_from(size_t i, size_t j) {
 	return trace_arrow_.find(i)->second.find(j)->second;
     }
 
@@ -124,7 +144,7 @@ private:
      */
     bool
     exists_trace_arrow_from(size_t i, size_t j) const {
-	trace_arrow_map_t::const_iterator row = trace_arrow_.find(i);
+	auto row = trace_arrow_.find(i);
 	return row != trace_arrow_.end()
 	    &&
 	    row->second.find(j) != row->second.end();
@@ -142,9 +162,12 @@ private:
     void
     register_trace_arrow(size_t i, size_t j,char type, size_t k, size_t l) {
 	//std::cout << "register_trace_arrow "<<i<<" "<<j<<" "<<k<<" "<<l<<std::endl;
-	trace_arrow_[i][j] = trace_arrow_t(type,k,l);
+	trace_arrow_[i][j] = TraceArrow(type,i,j,k,l);
 	
 	inc_source_ref_count(k,l);
+    
+	ta_count_++;
+	ta_max_ = std::max(ta_max_,ta_count_);
     }
 
     /**
@@ -158,63 +181,63 @@ private:
     void
     inc_source_ref_count(size_t i, size_t j) {
 	// get trace arrow from (i,j) if it exists
-	trace_arrow_map_t::iterator row = trace_arrow_.find(i);
+	auto row = trace_arrow_.find(i);
 	if (row == trace_arrow_.end()) return;
 
-	trace_arrow_row_map_t::iterator it=row->second.find(j);
+	auto it=row->second.find(j);
 	if (it == row->second.end()) return;
 	
-	trace_arrow_t &ta=it->second;
+	TraceArrow &ta=it->second;
 	
-	ta.source_ref_count_++;
+	ta.inc_src();
     }
 
-    /**
+      /**
      * Garbage collect trace arrow
      *
      * if count = 0 then remove trace arrow; recursively decrement
      * targets and remove if count drops to 0
      */
-    void gc_trace_arrow(trace_arrow_map_t::iterator row, trace_arrow_row_map_t::iterator it) {
-	const trace_arrow_t &ta=it->second;
+    
+    void
+    gc_trace_arrow(size_t i, size_t j) {
+	auto row = trace_arrow_.find(i);
+	auto col = row->second.find(j);
 	
-	if (ta.source_ref_count_ == 0) {
+	const auto &ta = col->second;
+	
+	if (ta.source_ref_count() == 0) {
 	    // get trace arrow from the target if the arrow exists
-	    trace_arrow_map_t::iterator target_row = trace_arrow_.find(ta.k_);
-	    if (target_row != trace_arrow_.end()) {
-	    
-		trace_arrow_row_map_t::iterator target_it=target_row->second.find(ta.l_);
-		if (target_it != target_row->second.end()) {
-	    
-		    trace_arrow_t &target_ta=target_it->second;
-		    assert(target_ta.source_ref_count_>0);
-		    target_ta.source_ref_count_--;
-		    
-		    gc_trace_arrow(target_row,target_it);
-		}
+	    if (exists_trace_arrow_from(ta.k(i,j),ta.l(i,j))) {
+		auto &target_ta = trace_arrow_from(ta.k(i,j),ta.l(i,j));
+		
+		target_ta.dec_src();
+		
+		gc_trace_arrow(ta.k(i,j),ta.l(i,j));
 	    }
 	    
-	    row->second.erase(it);
-	    if (row->second.size()==0) {
-		trace_arrow_.erase(row);
-	    }
+	    row->second.erase(col);
+	    ta_count_--;
+	    ta_erase_++;
 	}
     }
     
     /** 
      * Garbage collect all trace arrows in given row
      * 
-     * @param row_index index of the row 
+     * @param i index of the row 
      */
     void
-    gc_row_of_trace_arrows( size_t row_index ) {
-	trace_arrow_map_t::iterator row = trace_arrow_.find(row_index);
+    gc_row_of_trace_arrows( size_t i ) {
+	auto row = trace_arrow_.find(i);
 	if (row == trace_arrow_.end()) return;
 	
-	for (trace_arrow_row_map_t::iterator it=row->second.begin();
-	     row->second.end() != it;
-	     ++it) {
-	    gc_trace_arrow(row,it);
+	for (size_t j=1; j<=n_ ; j++) {
+	    if (row->second.find(j) == row->second.end()) continue;
+	    gc_trace_arrow(i,j);
+	}
+	if (row->second.size()==0) {
+	    trace_arrow_.erase(row);
 	}
     }
     
@@ -226,7 +249,10 @@ public:
 	  n_(seq.length()),
 	  S_(encode_sequence(seq.c_str(),0)),
 	  S1_(encode_sequence(seq.c_str(),1)),
-	  params_(scale_parameters())
+	  params_(scale_parameters()),
+	  ta_count_(0),
+	  ta_erase_(0),
+	  ta_max_(0)
     {
 	make_pair_matrix();
 	
@@ -236,7 +262,7 @@ public:
 	/* init candidate lists */
 	CL_.resize(n_+1);
 	for (size_t j=n_; j>0; --j) {
-	    CL_[j].push_back( entry_t(j,0) );
+	    CL_[j].push_back( cand_entry_t(j,0) );
 	}
     }
 
@@ -328,7 +354,7 @@ private:
 	
 	    energy_t d = INF;
 	    
-	    for ( entry_list_t::iterator it = CL_[j].begin(); 
+	    for ( auto it = CL_[j].begin(); 
 		  CL_[j].end()!=it && it->first>=i ; ++it ) {
 		d = std::min( d, G_[it->first-1] + it->second );
 	    }
@@ -359,7 +385,7 @@ private:
 	
 	size_t k=j+1;
 	
-	for ( entry_list_t::iterator it = CL_[j].begin(); 
+	for ( auto it = CL_[j].begin(); 
 	      CL_[j].end()!=it && it->first>=i;
 	      ++it ) {
 	    energy_t d_it = G_[it->first-1] + it->second;
@@ -397,12 +423,12 @@ private:
 	structure_[j]=')';
 	
 	if (exists_trace_arrow_from(i,j)) {
-	    const trace_arrow_t &arrow = trace_arrow_from(i,j);
-	    if(arrow.type_=='C') {
-		trace_C(arrow.k_,arrow.l_);
-	    } else if (arrow.type_=='G') {
-		compute_G(arrow.k_,arrow.l_);
-		trace_G(arrow.k_,arrow.l_);
+	    const TraceArrow &arrow = trace_arrow_from(i,j);
+	    if(arrow.is_C()) {
+		trace_C(arrow.k(i,j),arrow.l(i,j));
+	    } else if (arrow.is_G()) {
+		compute_G(arrow.k(i,j),arrow.l(i,j));
+		trace_G(arrow.k(i,j),arrow.l(i,j));
 	    }
 	}
     }
@@ -417,7 +443,7 @@ public:
 	    
 		energy_t d = INF;
 		
-		for ( entry_list_t::iterator it = CL_[j].begin(); CL_[j].end()!=it; ++it ) {
+		for ( auto it = CL_[j].begin(); CL_[j].end()!=it; ++it ) {
 		    d = std::min( d, G_[it->first-1] + it->second );
 		}
 		
@@ -481,7 +507,7 @@ public:
 		    
 		    if ( c < d ) {
 			// got a candidate => register candidate
-			CL_[j].push_back( entry_t(i, c) );
+			CL_[j].push_back( cand_entry_t(i, c) );
 			inc_source_ref_count(i,j); // <- always keep arrows starting from candidates 
 		    }
 		}
@@ -506,26 +532,35 @@ public:
 	}
 	return c;
     }
+
     size_t
     num_of_tas() const {
 	size_t c=0;
 	for(size_t i=1;i<=n_;i++) {
-	    trace_arrow_map_t::const_iterator row=trace_arrow_.find(i); 
+	    auto row=trace_arrow_.find(i); 
 	    if (row!=trace_arrow_.end()) { 
 		c += row->second.size();
 	    }
 	}
 	return c;
     }
+
+    size_t ta_count() const {return ta_count_;}
+    size_t ta_erase() const {return ta_erase_;}
+    size_t ta_max() const {return ta_max_;}
     
 };
 
 int
-main(int,char**) {
-
-    std::string seq;
-    std::getline(std::cin,seq);
+main(int argc,char **argv) {
     
+    std::string seq;
+    if (argc>1) {
+	seq=argv[1];
+    } else {
+	std::getline(std::cin,seq);
+    }
+
     HalfZuker hz(seq);
 
     std::cout << seq << std::endl;
@@ -535,11 +570,21 @@ main(int,char**) {
 
     hz.trace_back();
 
-    std::cout << "Unsparse matrix entries: "<< 2* (seq.length()*(seq.length()+1)/2) <<std::endl;
-    std::cout << "G:\t"<<seq.length()<<std::endl;
-    std::cout << "C:\t"<<seq.length()*MAXLOOP<<std::endl;
-    std::cout << "Cands:\t"<<hz.num_of_candidates()<<std::endl;
-    std::cout << "TAs:\t"<<hz.num_of_tas()<<std::endl;
+    size_t n=seq.length();
+    
+    float factor=1024;
+    const std::string unit=" kB";
+
+    std::cout << "[Unsp:\t"<< 2* n*(n+1)/2 * sizeof(int)/factor<<unit<<"]"<<std::endl;
+    std::cout << "G:\t"<<n*sizeof(HalfZuker::energy_t)/factor<<unit<<std::endl;
+    std::cout << "C:\t"<<n*sizeof(HalfZuker::energy_t)*MAXLOOP/factor<<unit<<std::endl;
+    std::cout << "Cands:\t"<<hz.num_of_candidates()*sizeof(HalfZuker::cand_entry_t)/factor<<unit<<std::endl;
+    std::cout << "TAs:\t"<<hz.ta_count()*sizeof(HalfZuker::TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
+
+    std::cout << "TA cnt:\t"<<hz.ta_count()<<std::endl;
+    std::cout << "TA max:\t"<<hz.ta_max()<<std::endl;
+    std::cout << "TA rm:\t"<<hz.ta_erase()<<std::endl;
 
     return 0;
 }
+

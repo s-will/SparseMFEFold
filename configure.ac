@@ -43,6 +43,9 @@ DX_PS_FEATURE(OFF)
 DX_INIT_DOXYGEN(HybridPF, Doxyfile, doc)
 
 
+## c++11
+CXXFLAGS="$CXXFLAGS -std=c++11"
+
 
 ##################
 ## Debug option

@@ -6,3 +6,4 @@ aclocal.m4
 config.h.in
 config
 src/Makefile.in
+autom4te.cache
