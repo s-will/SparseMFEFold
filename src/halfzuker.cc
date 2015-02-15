@@ -114,25 +114,31 @@ public:
     };
 private:
     
-    typedef std::map< size_t, TraceArrow >            trace_arrow_row_map_t;
-    typedef std::map< size_t, trace_arrow_row_map_t > trace_arrow_map_t;
+    typedef std::map< size_t, TraceArrow >        trace_arrow_row_map_t;
+    typedef std::vector< trace_arrow_row_map_t >  trace_arrow_map_t;
 
     trace_arrow_map_t trace_arrow_;
     
     /**
-     * Get target of trace arrow by source
+     * Get target of trace arrow by source (const)
      *
      * @param i source row index
      * @param j source column index
      */
     const TraceArrow &
     trace_arrow_from(size_t i, size_t j) const {
-	return trace_arrow_.find(i)->second.find(j)->second;
+	return trace_arrow_[i].find(j)->second;
     }
 
+    /**
+     * Get target of trace arrow by source (non-const)
+     *
+     * @param i source row index
+     * @param j source column index
+     */
     TraceArrow &
     trace_arrow_from(size_t i, size_t j) {
-	return trace_arrow_.find(i)->second.find(j)->second;
+	return trace_arrow_[i].find(j)->second;
     }
 
     /**
@@ -144,10 +150,7 @@ private:
      */
     bool
     exists_trace_arrow_from(size_t i, size_t j) const {
-	auto row = trace_arrow_.find(i);
-	return row != trace_arrow_.end()
-	    &&
-	    row->second.find(j) != row->second.end();
+	return trace_arrow_[i].find(j) != trace_arrow_[i].end();
     }
 
     /** 
@@ -181,18 +184,15 @@ private:
     void
     inc_source_ref_count(size_t i, size_t j) {
 	// get trace arrow from (i,j) if it exists
-	auto row = trace_arrow_.find(i);
-	if (row == trace_arrow_.end()) return;
-
-	auto it=row->second.find(j);
-	if (it == row->second.end()) return;
+	auto it=trace_arrow_[i].find(j);
+	if (it == trace_arrow_[i].end()) return;
 	
 	TraceArrow &ta=it->second;
 	
 	ta.inc_src();
     }
 
-      /**
+    /**
      * Garbage collect trace arrow
      *
      * if count = 0 then remove trace arrow; recursively decrement
@@ -201,8 +201,8 @@ private:
     
     void
     gc_trace_arrow(size_t i, size_t j) {
-	auto row = trace_arrow_.find(i);
-	auto col = row->second.find(j);
+	
+	auto col = trace_arrow_[i].find(j);
 	
 	const auto &ta = col->second;
 	
@@ -216,7 +216,7 @@ private:
 		gc_trace_arrow(ta.k(i,j),ta.l(i,j));
 	    }
 	    
-	    row->second.erase(col);
+	    trace_arrow_[i].erase(col);
 	    ta_count_--;
 	    ta_erase_++;
 	}
@@ -229,15 +229,10 @@ private:
      */
     void
     gc_row_of_trace_arrows( size_t i ) {
-	auto row = trace_arrow_.find(i);
-	if (row == trace_arrow_.end()) return;
-	
+	assert(i<=n_);
 	for (size_t j=1; j<=n_ ; j++) {
-	    if (row->second.find(j) == row->second.end()) continue;
+	    if (trace_arrow_[i].find(j) == trace_arrow_[i].end()) continue;
 	    gc_trace_arrow(i,j);
-	}
-	if (row->second.size()==0) {
-	    trace_arrow_.erase(row);
 	}
     }
     
@@ -264,6 +259,8 @@ public:
 	for (size_t j=n_; j>0; --j) {
 	    CL_[j].push_back( cand_entry_t(j,0) );
 	}
+
+	trace_arrow_.resize(n_+1);
     }
 
 
@@ -517,8 +514,9 @@ public:
 	    }
 	    
 	    // Clean up trace arrows in i+MAXLOOP
-	    gc_row_of_trace_arrows( i + MAXLOOP );
-	    
+	    if ( i+MAXLOOP <= n_) {
+		gc_row_of_trace_arrows( i + MAXLOOP );
+	    }
 	}
 	
 	std::cout << "MFE: \t"<<(G_[n_]/100.0)<<std::endl;
@@ -537,10 +535,7 @@ public:
     num_of_tas() const {
 	size_t c=0;
 	for(size_t i=1;i<=n_;i++) {
-	    auto row=trace_arrow_.find(i); 
-	    if (row!=trace_arrow_.end()) { 
-		c += row->second.size();
-	    }
+	    c += trace_arrow_[i].size();
 	}
 	return c;
     }
@@ -580,6 +575,8 @@ main(int argc,char **argv) {
     std::cout << "C:\t"<<n*sizeof(HalfZuker::energy_t)*MAXLOOP/factor<<unit<<std::endl;
     std::cout << "Cands:\t"<<hz.num_of_candidates()*sizeof(HalfZuker::cand_entry_t)/factor<<unit<<std::endl;
     std::cout << "TAs:\t"<<hz.ta_count()*sizeof(HalfZuker::TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
+
+    std::cout << "TAs+ov:\t"<<(n*48+hz.ta_count()*(32+sizeof(size_t)+sizeof(HalfZuker::TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
 
     std::cout << "TA cnt:\t"<<hz.ta_count()<<std::endl;
     std::cout << "TA max:\t"<<hz.ta_max()<<std::endl;
