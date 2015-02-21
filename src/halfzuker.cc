@@ -17,10 +17,10 @@
 		 W(i+1,j-1) + NonILoopPenalty if pair_type(S[i],S[j])>0
                }
 
-
-  TODO: trace arrows to candidates could be omitted and reconstructed in trace back
-
-
+	       
+   Since many matrix entries can not be efficiently recomputed in trace back, we store
+   trace arrows to such entries. To save space, trace arrows are gc'ed and
+   trace arrows to candidates are omitted and reconstructed in trace back.
 */
 
 /*
@@ -47,6 +47,7 @@
 #include <limits>
 
 #include <vector>
+#include <iterator>
 //#include <map>
 //#include <unordered_map>
 
@@ -55,6 +56,14 @@
 extern "C" {
 #   include "ViennaRNA/pair_mat.h"
 #   include "ViennaRNA/loop_energies.h"
+}
+
+
+template<class T1,class T2>
+std::ostream &
+operator << (std::ostream &out, const std::pair<T1,T2> &x) {
+    out<<"("<<x.first<<","<<x.second<<")";
+    return out;
 }
 
 class HalfZuker {
@@ -78,16 +87,18 @@ private:
     std::vector<energy_t> W_;
 
 public:
-    typedef std::pair<size_t,energy_t> cand_entry_t;
+    typedef unsigned short int cand_pos_t;
+    typedef std::pair<cand_pos_t,energy_t> cand_entry_t;
     typedef std::vector< cand_entry_t > cand_list_t;
 private:
     std::vector< cand_list_t > CLW_; //!< candidate list for decomposition in W
     
     std::string structure_;
     
-    size_t ta_count_;
-    size_t ta_erase_;
-    size_t ta_max_;
+    size_t ta_count_; // count all generated tas
+    size_t ta_avoid_; // count all avoided tas (since they point to candidates)
+    size_t ta_erase_; // count all erased tas (in gc)
+    size_t ta_max_; // keep track of maximum number of tas, existing simultaneously
 
 public:
     /**
@@ -102,6 +113,7 @@ public:
 	char type_; //!< type of the arrow (pointing to 'C' or 'G')
 	unsigned char k_; //!< target row of arrow
 	unsigned char l_; //!< target column of arrow
+	energy_t energy_; //!<target energy
 	uint count_; //!< counts how many trace arrows point to the source
     public:
 	/**
@@ -114,11 +126,13 @@ public:
 		   size_t i,
 		   size_t j,
 		   size_t k,
-		   size_t l
+		   size_t l,
+		   energy_t e
 		   )
 	    : type_(type),
 	      k_(k-i),
 	      l_(j-l),
+	      energy_(e),
 	      count_(0)
 	{}
 
@@ -131,6 +145,7 @@ public:
 	bool is_V() const {return type_=='C';}
 	size_t k(size_t i,size_t j) const {return k_+i;}
 	size_t l(size_t i,size_t j) const {return j-l_;}
+	energy_t target_energy() const {return energy_;}
 	size_t source_ref_count() const {return count_;}
 	
 	void inc_src() {count_++;}
@@ -300,7 +315,7 @@ private:
     void
     register_trace_arrow(size_t i, size_t j,char type, size_t k, size_t l, energy_t e) {
 	// std::cout << "register_trace_arrow "<<i<<" "<<j<<" "<<k<<" "<<l<<std::endl;
-	trace_arrow_[i].push_ascending( j, TraceArrow(type,i,j,k,l) );
+	trace_arrow_[i].push_ascending( j, TraceArrow(type,i,j,k,l,e) );
 	
 	inc_source_ref_count(k,l);
 	
@@ -394,8 +409,15 @@ private:
     bool
     is_candidateW(size_t i, size_t j) const {
 	const cand_list_t &list = CLW_[j];
-	auto it = std::lower_bound(list.begin(),list.end(),j,cand_comp); 
-	bool res = it != list.end() && it->first==i;
+	
+	//std::cout << "Check is candidate "<<i<<","<<j<<" in CL of "<<j<<": ";
+	//for ( auto &x : list ) { std::cout <<x<<", "; }
+ 
+	auto it = std::lower_bound(list.begin(),list.end(),i,cand_comp); 
+	
+	bool res = it!=list.end() && it->first==i;
+	
+	//std::cout <<": "<<*it<<" "<<res << std::endl;
 	
 	return res;
     }
@@ -410,6 +432,7 @@ public:
 	  S1_(encode_sequence(seq.c_str(),1)),
 	  params_(scale_parameters()),
 	  ta_count_(0),
+	  ta_avoid_(0),
 	  ta_erase_(0),
 	  ta_max_(0)
     {
@@ -543,7 +566,8 @@ private:
 	if (i+TURN+1>=j) return;
 	
 	size_t k=j+1;
-
+	energy_t e=0;
+	
 	for ( auto it = CLW_[j].begin(); 
 	      CLW_[j].end()!=it && it->first>=i;
 	      ++it ) {
@@ -551,6 +575,7 @@ private:
 	    
 	    if (W_[j] == d_it) {
 		k = it->first;
+		e = d_it;
 		break;
 	    }
 	}
@@ -562,7 +587,7 @@ private:
 	trace_W(i,k-1);
     
 	if (k!=j) {
-	    trace_V(k,j);
+	    trace_V(k,j,e);
 	}
     }
 
@@ -574,7 +599,7 @@ private:
      * @param energy energy in V[i,j]
      */
     void
-    trace_V(size_t i, size_t j) {
+    trace_V( size_t i, size_t j, energy_t e ) {
 	assert (i+TURN+1<=j);
 	
 	structure_[i]='(';
@@ -583,10 +608,23 @@ private:
 	if (exists_trace_arrow_from(i,j)) {
 	    const TraceArrow &arrow = trace_arrow_from(i,j);
 	    if(arrow.is_V()) {
-		trace_V(arrow.k(i,j),arrow.l(i,j));
+		trace_V(arrow.k(i,j),arrow.l(i,j), arrow.target_energy());
 	    } else if (arrow.is_W()) {
 		compute_W(arrow.k(i,j),arrow.l(i,j));
 		trace_W(arrow.k(i,j),arrow.l(i,j));
+	    }
+	} else {
+	    int ptype_closing = pair_type(i,j);
+
+	    // test whether we have to trace back to candidate
+	    for ( size_t l=i; l<j; l++) {
+		for ( auto it=CLW_[l].begin()+1; CLW_[l].end()!=it && it->first>i; ++it ) {
+		    size_t k=it->first;
+		    if (  e == it->second + ILoopE(ptype_closing,i,j,k,l) + ILoopBonus_ ) {
+			trace_V(k,l,it->second);
+			return;
+		    }
+		}
 	    }
 	}
     }
@@ -661,10 +699,11 @@ public:
 		    } else {
 			if (best_l!=0) { /* not hairpin */
 			    assert(best_k<best_l);
-			    if (!is_candidateW(best_k,best_l)) {
+			    if ( !is_candidateW(best_k,best_l) ) {
 				//std::cout << "Reg TA "<<best_k<<" "<<best_l<<std::endl;
 				register_trace_arrow(i,j,'C',best_k,best_l,best_e);
 			    } else {
+				ta_avoid_++;
 				//std::cout << "Avoid TA "<<best_k<<" "<<best_l<<std::endl;
 			    }
 			}
@@ -674,7 +713,8 @@ public:
 			// got a candidate => register candidate
 			CLW_[j].push_back( cand_entry_t(i, c) );
 			//std::cout << "Register candidate "<<i<<" "<<j<<std::endl;
-			inc_source_ref_count(i,j); // <- always keep arrows starting from candidates 
+			inc_source_ref_count(i,j); // <- always keep arrows starting from candidates
+			assert(is_candidateW(i,j));
 		    }
 		}
 		
@@ -686,7 +726,7 @@ public:
 	    if ( i+MAXLOOP <= n_) {
 		gc_row_of_trace_arrows( i + MAXLOOP );
 	    }
-	    
+
 	    // Reallocate candidate lists in i
 	    for ( auto &x: CLW_ ) {
 		if (x.capacity() > 1.5*x.size()) {
@@ -700,7 +740,6 @@ public:
 		    x.reallocate();
 		}
 	    }
-	    
 	}
 	
 	std::cout << "MFE: \t"<<(W_[n_]/100.0)<<std::endl;
@@ -744,6 +783,7 @@ public:
 
     size_t ta_count() const {return ta_count_;}
     size_t ta_erase() const {return ta_erase_;}
+    size_t ta_avoid() const {return ta_avoid_;}
     size_t ta_max() const {return ta_max_;}
     
 };
@@ -785,6 +825,7 @@ main(int argc,char **argv) {
 
     std::cout << "TA cnt:\t"<<hz.ta_count()<<std::endl;
     std::cout << "TA max:\t"<<hz.ta_max()<<std::endl;
+    std::cout << "TA av:\t"<<hz.ta_avoid()<<std::endl;
     std::cout << "TA rm:\t"<<hz.ta_erase()<<std::endl;
     
     std::cout <<std::endl;
@@ -795,3 +836,4 @@ main(int argc,char **argv) {
 
     return 0;
 }
+
