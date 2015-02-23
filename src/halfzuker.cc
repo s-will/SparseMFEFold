@@ -1,45 +1,57 @@
-/*
-  Zuker with about half of the sugar.  Sparse variant of an
-  RNA-folding algorithm "in-between Nussinov and Zuker" (interior loop
-  energies, but no proper multi-loop energies)
+/**
+  Space-efficient sparse variant of an RNA (loop-based) free energy minimization
+  algorithm (RNA folding equivalent to the Zuker algorithm).
   
-  Demonstration of sparsification and sparse trace-back. For the
-  purpose of trace-back, this algorithm is fundamentally more complex
-  than the Nussinov algorithm.
+  The results are equivalent to RNAfold -d0.
+  
+  Demonstration of space-efficient sparsification with trace-back.
+  
+  Since many matrix entries can not be efficiently recomputed in trace back, we store
+  trace arrows to such entries. To save space, trace arrows are gc'ed and
+  trace arrows to candidates are omitted and reconstructed in trace back.
 
-  Recursions:
-  W(i,j) = min { W(i,k-1),
-                 min_i<k<j  W(i,k-1) + V(k,j),
-                 V(i,j)
-	       }
-  V(i,j) = min { HairpinE(i,j),
-		 min_kl V(i,j)+ILoopE(i,j,k,l),
-		 W(i+1,j-1) + NonILoopPenalty if pair_type(S[i],S[j])>0
-               }
-
-	       
-   Since many matrix entries can not be efficiently recomputed in trace back, we store
-   trace arrows to such entries. To save space, trace arrows are gc'ed and
-   trace arrows to candidates are omitted and reconstructed in trace back.
-*/
-
-/*
-  TODO: extend to Zuker-Recursions:
+  // ----------------------------------------
+  // Specific recursions:
+  //
   W(i,j) = min { W(i,j-1),
-                 min_i<k<j  W(i,k-1) + V(k,j), <-- CLW
+                 min_i<k<j  W(i,k-1) + V(k,j), <-- W (same i), CLW
                  V(i,j)
 		 0 if i>=j-m
-	       }
+		 }
+
   V(i,j) = min { HairpinE(i,j),
-		 min_kl V(i,j)+ILoopE(i,j,k,l),
-		 min_k WM(i+1,k-1) + WM(k,j) + a  <-- CLV
-		}
-  WM(i,j) = min { WM(i,j-1) + c,
-                  WM(i+1,j) + c,
-                  V(i,j)+b,
-		  min_i<k<j  WM(i,k-1) + V(k,j) + b,  <-- CLWM
-		  -inf if i>=j-m
+		 min_kl V(i,j)+ILoopE(i,j,k,l), <-- TAs
+		 WM2(i+1,j-1) + a       <-- WM2[(i+1)%2]; no TAs
+		 }
+	       
+  WM(i,j) = min { V(i,j)+b,      <-- candidate in recomp
+		  WM(i,j-1) + c, <-- ! not via candidate list
+                  min_i<k<j (k-i)*c + V(k,j) + b, <-- CLWM   ( trick to save trace arrows )
+                  min_i<k<j  WM(i,k-1) + V(k,j) + b,  <-- WM, CLWM
+		  INF if i>=j-m
 		  }
+
+  WM2(i,j) = min{ WM2(i,j-1) + c,
+                  min_i<k<j  WM(i,k-1) + V(k,j) + b },  <-- WM, CLWM; no TAs
+  
+  // ----------------------------------------
+  // Candidate criteria:
+  //
+  (i,j) is a candidate for the split in W if 
+  V(i,j)      < min {
+                    W(i,j-1),
+		    min_i<k<j  W(i,k-1) + V(k,j)
+                    }
+		    
+  (i,j) is a candidate for the split in WM if 
+  V(i,j) + b  < min {
+                    WM(i,j-1)+c,
+		    min_i<k<j (k-i)*c + V(k,j) + b,
+		    min_i<k<j  WM(i,k-1) + V(k,j) + b
+                    }
+
+  For simplicity and space savings, we store all candidates that meet
+  either criterion in the same list.
 */
 
 #include <LocARNA/matrices.hh>
@@ -48,10 +60,18 @@
 
 #include <vector>
 #include <iterator>
+
 //#include <map>
 //#include <unordered_map>
 
 #include <cstring>
+
+#include "simple_map.hh"
+
+//! type of energy
+typedef int energy_t;
+
+#include "trace_arrow.hh"
 
 extern "C" {
 #   include "ViennaRNA/pair_mat.h"
@@ -68,13 +88,7 @@ operator << (std::ostream &out, const std::pair<T1,T2> &x) {
 
 class HalfZuker {
 
-public:
-    //! type of energy
-    typedef int energy_t;
-
 private:
-    const energy_t NonILoopPenalty_;
-    const energy_t ILoopBonus_;
 
     std::string seq_;
     size_t n_;
@@ -83,314 +97,31 @@ private:
     short *S1_;
     paramT *params_;
     
-    LocARNA::Matrix<energy_t> V_;
+    std::string structure_;
+    TraceArrows ta_;
+
+    LocARNA::Matrix<energy_t> V_; // store V[i..i+MAXLOOP-1][1..n]
     std::vector<energy_t> W_;
+    std::vector<energy_t> WM_;
+    std::vector<energy_t> WM2_;
 
 public:
     typedef unsigned short int cand_pos_t;
     typedef std::pair<cand_pos_t,energy_t> cand_entry_t;
     typedef std::vector< cand_entry_t > cand_list_t;
+
 private:
-    std::vector< cand_list_t > CLW_; //!< candidate list for decomposition in W
-    
-    std::string structure_;
-    
-    size_t ta_count_; // count all generated tas
-    size_t ta_avoid_; // count all avoided tas (since they point to candidates)
-    size_t ta_erase_; // count all erased tas (in gc)
-    size_t ta_max_; // keep track of maximum number of tas, existing simultaneously
-
-public:
     /**
-     * @brief Trace arrow
-     * 
-     * Describes a trace arrow from i,j to k_,l_ of give type
-     * type_. The sourcce (i,j) is not represented in the data
-     * structure. However, each trace arrow is associated to exactly
-     * one source.
-     */
-    class TraceArrow {
-	char type_; //!< type of the arrow (pointing to 'C' or 'G')
-	unsigned char k_; //!< target row of arrow
-	unsigned char l_; //!< target column of arrow
-	energy_t energy_; //!<target energy
-	uint count_; //!< counts how many trace arrows point to the source
-    public:
-	/**
-	 * @brief construct by target coordinates
-	 * @param type
-	 * @param k
-	 * @param l
-	 */
-	TraceArrow(char type,
-		   size_t i,
-		   size_t j,
-		   size_t k,
-		   size_t l,
-		   energy_t e
-		   )
-	    : type_(type),
-	      k_(k-i),
-	      l_(j-l),
-	      energy_(e),
-	      count_(0)
-	{}
-
-	/**
-	 * @brief empty c'tor
-	 */ 
-	TraceArrow() {}
-	
-	bool is_W() const {return type_=='G';}
-	bool is_V() const {return type_=='C';}
-	size_t k(size_t i,size_t j) const {return k_+i;}
-	size_t l(size_t i,size_t j) const {return j-l_;}
-	energy_t target_energy() const {return energy_;}
-	size_t source_ref_count() const {return count_;}
-	
-	void inc_src() {count_++;}
-	void dec_src() {count_--;}
-
-    };
-private:
+       candidate list for decomposition in W or WM
+       
+       @note Avoid separate candidate lists CLW and CLWM for split cases in W and
+       WM to save even more space; here, this works after
+       reformulating the recursions such that both split-cases recurse to
+       V-entries. (compare OCTs)
+    */
+    std::vector< cand_list_t > CL_;
     
-    /* space saving replacement for map of trace arrows in rows i;
-       works for our special case */
-    template<class key_t, class val_t>
-    class SimpleMap: std::vector<std::pair<key_t, val_t> > {
-	typedef std::pair<key_t, val_t> key_val_t;
-	typedef std::vector<key_val_t> key_val_vec_t;
-	typedef typename key_val_vec_t::iterator iterator;
-	typedef typename key_val_vec_t::const_iterator const_iterator;
-	
-	class  {
-	public:
-	    bool
-	    operator () (const key_val_t &x,
-			 const key_t &y) const {
-		return x.first < y;
-	    }
-	} comp;
-
-	iterator
-	binsearch (iterator first, iterator last, const key_t& key)
-	{
-	    first = std::lower_bound(first,last,key,comp);
-	    if (first==last || key < first->first) {
-		return last;
-	    }
-	    return first;
-	}
-
-	const_iterator
-	binsearch (const_iterator first, const_iterator last, const key_t& key) const
-	{
-	    first = std::lower_bound(first,last,key,comp);
-	    if (first==last || key < first->first) {
-		return last;
-	    }
-	    return first;
-	}
-
-    public:
-	SimpleMap() {}
-	
-	const_iterator 
-	find(const key_t &key) const { 
-	    auto it= binsearch(key_val_vec_t::begin(), key_val_vec_t::end(), key);
-	    assert(it == key_val_vec_t::end() || it->first == key);
-	    return it;
-	};
-	
-	iterator
-	find(const key_t &key) { 
-	    auto it=binsearch(key_val_vec_t::begin(), key_val_vec_t::end(), key);
-	    assert(it == key_val_vec_t::end() || it->first == key);
-	    return it;
-	};
-    	
-	bool
-	exists(const key_t &key) const {
-	    return find(key) != key_val_vec_t::end();
-	}
-	
-	/** 
-	 * @brief push in ascending order of keys 
-	 * @param key
-	 * @param val
-	 *
-	 * successive push_ascending must be in ascending order of the key type
-	 */
-	void
-	push_ascending( const key_t &key, const val_t &val ) {
-	    assert(size()==0||key > key_val_vec_t::operator[](size()-1).first);
-	    key_val_vec_t::push_back(key_val_t(key,val));
-	}
-	
-	void
-	erase(iterator it) {
-	    //std::cout << key_val_vec_t::size()<<" "<<key_val_vec_t::capacity()<<std::endl;
-	    
-	    // doing only this, wastes space (due to stl-vector allocation strategy)
-	    // key_val_vec_t::erase(it);
-	    
-	    // instead: copy to new space with exactly the right size
-	    // (possible optimization: only mark erased entries at
-	    // first and delay the copying until it pays off)
-	    key_val_vec_t vec(key_val_vec_t::size()-1);
-	    iterator target=copy(key_val_vec_t::begin(),it,vec.begin());
-	    copy(it+1,key_val_vec_t::end(),target);
-	    
-	    vec.swap(*this);
-	}
-
-	size_t
-	size() const {
-	    return key_val_vec_t::size();
-	}
-	
-	size_t
-	capacity() const {
-	    return key_val_vec_t::capacity();
-	}
-
-	void
-	reallocate() {
-	    key_val_vec_t vec(size());
-	    copy(key_val_vec_t::begin(),key_val_vec_t::end(),vec.begin());
-	    vec.swap(*this);
-	}
-    };
-    
-    
-    //typedef std::map< size_t, TraceArrow >        trace_arrow_row_map_t;
-    typedef SimpleMap< size_t, TraceArrow >       trace_arrow_row_map_t;
-    typedef std::vector< trace_arrow_row_map_t >  trace_arrow_map_t;
-
-    trace_arrow_map_t trace_arrow_;
-    
-    /**
-     * Get target of trace arrow by source (const)
-     *
-     * @param i source row index
-     * @param j source column index
-     */
-    const TraceArrow &
-    trace_arrow_from(size_t i, size_t j) const {
-	return trace_arrow_[i].find(j)->second;
-    }
-
-    /**
-     * Get target of trace arrow by source (non-const)
-     *
-     * @param i source row index
-     * @param j source column index
-     */
-    TraceArrow &
-    trace_arrow_from(size_t i, size_t j) {
-	return trace_arrow_[i].find(j)->second;
-    }
-
-    /**
-     * Check existence of trace arrow by source
-     *
-     * @param i source row index
-     * @param j source column index
-     * @returns whether trace arrow exists
-     */
-    bool
-    exists_trace_arrow_from(size_t i, size_t j) const {
-	return trace_arrow_[i].exists(j);
-    }
-
-    /** 
-     * Register trace arrow
-     * 
-     * @param i source row
-     * @param j source column
-     * @param type target type
-     * @param k target row
-     * @param l target column
-     */    
-    void
-    register_trace_arrow(size_t i, size_t j,char type, size_t k, size_t l, energy_t e) {
-	// std::cout << "register_trace_arrow "<<i<<" "<<j<<" "<<k<<" "<<l<<std::endl;
-	trace_arrow_[i].push_ascending( j, TraceArrow(type,i,j,k,l,e) );
-	
-	inc_source_ref_count(k,l);
-	
-	ta_count_++;
-	ta_max_ = std::max(ta_max_,ta_count_);
-    }
-
-    /**
-     * Increment the reference count of the source
-     *
-     * @param i source row index
-     * @param j source column index
-     *
-     * If no trace arrow from source exists, do nothing
-     */
-    void
-    inc_source_ref_count(size_t i, size_t j) {
-	// get trace arrow from (i,j) if it exists
-	if (! trace_arrow_[i].exists(j)) return;
-	
-	auto it=trace_arrow_[i].find(j);
-	
-	TraceArrow &ta=it->second;
-	
-	ta.inc_src();
-    }
-
-    /**
-     * Garbage collect trace arrow
-     *
-     * if count = 0 then remove trace arrow; recursively decrement
-     * targets and remove if count drops to 0
-     */
-    void
-    gc_trace_arrow(size_t i, size_t j) {
-	
-	assert( trace_arrow_[i].exists(j) );
-
-	auto col = trace_arrow_[i].find(j);
-	
-	const auto &ta = col->second;
-	
-	if (ta.source_ref_count() == 0) {
-	    // get trace arrow from the target if the arrow exists
-	    if (exists_trace_arrow_from(ta.k(i,j),ta.l(i,j))) {
-		auto &target_ta = trace_arrow_from(ta.k(i,j),ta.l(i,j));
-		
-		target_ta.dec_src();
-		
-		gc_trace_arrow(ta.k(i,j),ta.l(i,j));
-	    }
-	    
-	    trace_arrow_[i].erase(col);
-	    ta_count_--;
-	    ta_erase_++;
-	}
-    }
-    
-    /** 
-     * Garbage collect all trace arrows in given row
-     * 
-     * @param i index of the row 
-     */
-    void
-    gc_row_of_trace_arrows( size_t i ) {
-	
-	assert(i<=n_);
-	
-	for (size_t j=1; j<=n_ ; j++) {
-	    if (! trace_arrow_[i].exists(j)) continue;
-	    gc_trace_arrow(i,j);
-	}
-	
-    }
-
+    // compare candidate list entries by keys (left index i) in descending order
     struct {
 	bool operator ()(const cand_entry_t &x, size_t y) const {
 	    return x.first > y;
@@ -399,16 +130,16 @@ private:
     cand_comp;
     
     /** 
-     * Test existence of W-candidate
+     * Test existence of candidate
      * 
      * @param i row
      * @param j col
      * 
-     * @return whether (i,j) is candidate for W
+     * @return whether (i,j) is candidate for W/WM splits
      */
     bool
-    is_candidateW(size_t i, size_t j) const {
-	const cand_list_t &list = CLW_[j];
+    is_candidate(size_t i, size_t j) const {
+	const cand_list_t &list = CL_[j];
 	
 	//std::cout << "Check is candidate "<<i<<","<<j<<" in CL of "<<j<<": ";
 	//for ( auto &x : list ) { std::cout <<x<<", "; }
@@ -424,32 +155,33 @@ private:
     
 public:
     HalfZuker(const std::string &seq)
-	: NonILoopPenalty_(50),
-	  ILoopBonus_(-300),
-	  seq_(seq),
+	: seq_(seq),
 	  n_(seq.length()),
-	  S_(encode_sequence(seq.c_str(),0)),
-	  S1_(encode_sequence(seq.c_str(),1)),
 	  params_(scale_parameters()),
-	  ta_count_(0),
-	  ta_avoid_(0),
-	  ta_erase_(0),
-	  ta_max_(0)
+	  ta_(n_)
     {
 	make_pair_matrix();
+
+	S_ = encode_sequence(seq.c_str(),0);
+	S1_ = encode_sequence(seq.c_str(),1);
 	
 	V_.resize(MAXLOOP,n_+1);
 	W_.resize(n_+1,0);
 	
-	/* init candidate lists */
-	CLW_.resize(n_+1);
-	for (size_t j=n_; j>0; --j) {
-	    CLW_[j].push_back( cand_entry_t(j,0) );
-	}
+	WM_.resize(n_+1,INF);
 
-	trace_arrow_.resize(n_+1);
+	WM2_.resize(n_+1,INF);
+
+	// init candidate lists
+	CL_.resize(n_+1);
+	
+	ta_.resize(n_+1);
     }
 
+    /** 
+     * @brief Trace back
+     * pre: row 1 of matrix W is computed
+     */
     void
     trace_back() {
 	structure_.resize(n_+1,'.');
@@ -493,10 +225,10 @@ private:
 	    E_IntLoop(k-i-1,j-l-1,
 		      ptype_closing,
 		      ptype_enclosed,
-		      S_[i+1],
-		      S_[j-1],
-		      S_[k-1],
-		      S_[l+1],
+		      S1_[i+1],
+		      S1_[j-1],
+		      S1_[k-1],
+		      S1_[l+1],
 		      const_cast<paramT *>(params_));
     }
 
@@ -514,8 +246,8 @@ private:
 	return
 	    E_Hairpin(j-i-1, 
 		      ptype_closing,
-		      S_[i+1],
-		      S_[j-1],
+		      S1_[i+1],
+		      S1_[j-1],
 		      &seq_.c_str()[i-1],
 		      const_cast<paramT *>(params_));
 
@@ -523,41 +255,97 @@ private:
 
 
     /**
-     * Compute row of G
+     * @brief Recompute row of W
      *
      * @param i row index
-     * @param j column index
+     * @param max_j maximum column index
      */
     void
-    compute_W(size_t i, size_t max_j) {
-	//std::cout << "Compute G " <<i<<" "<<max_j<<std::endl; 
+    recompute_W(size_t i, size_t max_j) {
+	//std::cout << "Compute W " <<i<<" "<<max_j<<std::endl; 
 	
 	for ( size_t j=i-1; j<i+TURN+1; j++ ) { W_[j]=0; }
 	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
 	
-	    energy_t d = INF;
+	    energy_t w = INF;
 	    
-	    for ( auto it = CLW_[j].begin(); 
-		  CLW_[j].end()!=it && it->first>=i ; ++it ) {
-		d = std::min( d, W_[it->first-1] + it->second );
+	    // note: the loop covers the case W(i,j)=V(i,j),
+	    // since this is in the candidate list (TBS)
+	    for ( auto it = CL_[j].begin();
+		  CL_[j].end()!=it && it->first>=i ; ++it ) {
+		w = std::min( w, W_[it->first-1] + it->second );
 	    }
-	
-	    W_[j] = d;
+	    // case "j unpaired" is not in the CL (anymore)
+	    w = std::min(w,W_[j-1]);
+	    
+	    W_[j] = w;
 	}
+    }
+    
+    /**
+     * @brief Recompute row of WM 
+     *
+     * @param i row index
+     * @param max_j maximum column index
+     */
+    void
+    recompute_WM(size_t i, size_t max_j) {
+	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl; 
 	
-	// std::cout << "G["<<i<<"]["<<i<<".."<<max_j<<"]: " ;
-	// for ( size_t j=i; j<=max_j; j++ ) { 
-	//     std::cout << W_[j] << " ";
-	// }
-	// std::cout << std::endl;
+	for ( size_t j=i-1; j<i+TURN+1; j++ ) { WM_[j]=INF; }
+	
+	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
+	    energy_t wm = INF;
+	    
+	    for ( auto it = CL_[j].begin(); 
+		  CL_[j].end()!=it && it->first>=i ; ++it ) {
+		size_t k = it->first;
+		energy_t v_kj =
+		    it->second
+		    + E_MLstem(pair_type(k,j),-1,-1,params_);
+		wm = std::min( wm, static_cast<energy_t>(params_->MLbase*(k-i)) + v_kj );
+		wm = std::min( wm, WM_[k-1]  + v_kj );
+	    }
+	    wm = std::min(wm, WM_[j-1] + params_->MLbase);
+	    
+	    WM_[j] = wm;
+	}
     }
 
+    /**
+     * @brief Recompute row of WM2 
+     *
+     * @param i row index
+     * @param max_j maximum column index
+     */
+    void
+    recompute_WM2(size_t i, size_t max_j) {
+	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl; 
+	
+	for ( size_t j=i-1; j<i+2*TURN+3; j++ ) { WM2_[j]=INF; }
+	
+	for ( size_t j=i+2*TURN+3; j<=max_j; j++ ) {
+	    energy_t wm2 = INF;
+	    
+	    for ( auto it = CL_[j].begin(); 
+		  CL_[j].end()!=it && it->first>=i ; ++it ) {
+		size_t k = it->first;
+		energy_t v_kl=
+		    it->second 
+		    + E_MLstem(pair_type(k,j),-1,-1,params_);
+		wm2 = std::min( wm2, WM_[k-1]  + v_kl );
+	    }
+	    wm2 = std::min(wm2, WM2_[j-1] + params_->MLbase);
+	    
+	    WM2_[j] = wm2;
+	}
+    }
+    
     /** 
-     * Trace from W entry
+     * @brief Trace from W entry
      * 
      * @param i row index
      * @param j column index
-     * pre: structure is string of size (n+1)
      * pre: W contains values of row i in interval i..j
      */
     void
@@ -568,66 +356,159 @@ private:
 	size_t k=j+1;
 	energy_t e=0;
 	
-	for ( auto it = CLW_[j].begin(); 
-	      CLW_[j].end()!=it && it->first>=i;
+	// determine best split W -> W V
+	for ( auto it = CL_[j].begin();
+	      CL_[j].end()!=it && it->first>=i;
 	      ++it ) {
-	    energy_t d_it = W_[it->first-1] + it->second;
+	    k = it->first;
+	    energy_t v_kj = it->second + E_ExtLoop(pair_type(k,j),-1,-1,params_);
+	    energy_t w = W_[k-1] + v_kj;
 	    
-	    if (W_[j] == d_it) {
-		k = it->first;
-		e = d_it;
+	    if (W_[j] == w) {
+		e = w;
 		break;
 	    }
 	}
 	
-	//std::cout << i<<" "<<j<<" "<<k<<std::endl;
-	assert(i<=k && k<=j);
-	
-	// don't recompute G here, since i is not changed
-	trace_W(i,k-1);
-    
-	if (k!=j) {
-	    trace_V(k,j,e);
+	// case j unpaired
+	if (W_[j] == W_[j-1]) {
+	    trace_W(i,j-1);
+	    return;
 	}
+	
+	assert(i<=k && k<j);
+	
+	// don't recompute W, since i is not changed
+	trace_W(i,k-1);
+	trace_V(k,j,e);
     }
-
+    
     /** 
-     * Trace from V entry
+     * @brief Trace from V entry
      * 
      * @param i row index
      * @param j column index
      * @param energy energy in V[i,j]
+     *
+     * pre: structure is string of size (n+1)
      */
     void
     trace_V( size_t i, size_t j, energy_t e ) {
-	assert (i+TURN+1<=j);
+	assert( i+TURN+1<=j );
+	assert( j<=n_ );
 	
 	structure_[i]='(';
 	structure_[j]=')';
 
-	if (exists_trace_arrow_from(i,j)) {
-	    const TraceArrow &arrow = trace_arrow_from(i,j);
-	    if(arrow.is_V()) {
-		trace_V(arrow.k(i,j),arrow.l(i,j), arrow.target_energy());
-	    } else if (arrow.is_W()) {
-		compute_W(arrow.k(i,j),arrow.l(i,j));
-		trace_W(arrow.k(i,j),arrow.l(i,j));
-	    }
-	} else {
-	    int ptype_closing = pair_type(i,j);
+	int ptype_closing = pair_type(i,j);
 
-	    // test whether we have to trace back to candidate
+	if (ta_.exists_trace_arrow_from(i,j)) {
+	    // trace arrows may exist for interior loop case
+	    const TraceArrow &arrow = ta_.trace_arrow_from(i,j);
+	    
+	    trace_V(arrow.k(i,j),arrow.l(i,j), arrow.target_energy());
+	    return;
+	    
+	} else {
+	    
+	    assert(ptype_closing>0);
+	    
+	    // try to trace back to a candidate: (still) interior loop case
 	    for ( size_t l=i; l<j; l++) {
-		for ( auto it=CLW_[l].begin()+1; CLW_[l].end()!=it && it->first>i; ++it ) {
+		for ( auto it=CL_[l].begin(); CL_[l].end()!=it && it->first>i; ++it ) {
 		    size_t k=it->first;
-		    if (  e == it->second + ILoopE(ptype_closing,i,j,k,l) + ILoopBonus_ ) {
+		    if (  e == it->second + ILoopE(ptype_closing,i,j,k,l) ) {
 			trace_V(k,l,it->second);
 			return;
 		    }
 		}
 	    }
 	}
+	
+	// is this a hairpin?
+	if ( V_(i%MAXLOOP,j) == HairpinE(i,j) ) {
+	    return;
+	}
+
+	// if we are still here, trace to wm2 (split case);
+	// in this case, we know the 'trace arrow'; the next row has to be recomputed
+	recompute_WM(i+1,j-1);
+	recompute_WM2(i+1,j-1);
+	trace_WM2(i+1,j-1);
     }
+    
+    /** 
+     * @brief Trace from WM2
+     * 
+     * @param i row index
+     * @param j column index
+     * pre: vectors WM and WM2 are recomputed for row i
+     */
+    void
+    trace_WM2(size_t i, size_t j) {
+	energy_t e = WM2_[j];
+	
+	// case j unpaired
+	if ( e == WM2_[j-1] + params_->MLbase ) {
+	    // same i, no recomputation
+	    trace_WM2(i,j-1);
+	    return;
+	}
+	
+	for ( auto it=CL_[j].begin(); 
+	      CL_[j].end() != it  && it->first>=i+TURN+1; 
+	      ++it ) { 
+	    size_t k = it->first;
+	    if ( e == WM_[k-1] 
+		 + it->second 
+		 + E_MLstem(pair_type(k,j),-1,-1,params_) ) {
+		trace_WM(i,k-1,WM_[k-1]);
+		trace_V(k,j,it->second);
+	    }
+	}
+    }
+    
+    /** 
+     * @brief Trace from WM
+     * 
+     * @param i row index
+     * @param j column index
+     * pre: vector WM is recomputed for row i
+     */
+    void
+    trace_WM(size_t i, size_t j, energy_t e) {
+	if ( e == WM_[j-1] + params_->MLbase ) {
+	    trace_WM(i,j-1,WM_[j-1]);
+	    return;
+	}
+	
+	for ( auto it=CL_[j].begin(); 
+	      CL_[j].end() != it && it->first>=i;
+	      ++it ) {
+	    size_t k = it->first;
+	    energy_t v_kj = it->second 
+		+ E_MLstem(pair_type(k,j),-1,-1,params_);
+	    if ( e == WM_[k-1] + v_kj ) {
+		// no recomp, same i
+		trace_WM(i,k-1,WM_[k-1]);
+		trace_V(k,j,it->second);
+	    } else if ( e == static_cast<energy_t>((k-i)*params_->MLbase) + v_kj ) {
+		trace_V(k,j,it->second);
+	    }
+	}
+    }
+
+    /**
+     * @brief Register a candidate
+     * @param i start
+     * @param j end
+     * @param e energy of candidate "V(i,j)"
+     */
+    void
+    register_candidate(size_t i, size_t j, energy_t e) {
+	CL_[j].push_back( cand_entry_t(i, e) );
+    }
+    
 public:
 
     /* recursion evaluation (forward, sparse) */
@@ -636,26 +517,54 @@ public:
     	
 	for (size_t i=n_; i>0; --i) {
 	    for ( size_t j=i+TURN+1; j<=n_; j++ ) {
-	    
-		energy_t d = INF;
-		
-		for ( auto &x : CLW_[j] ) {
-		    d = std::min( d, W_[x.first-1] + x.second );
+
+		// ------------------------------
+		// W: split case
+		energy_t w_split = INF;
+		for ( auto &x : CL_[j] ) {
+		    w_split = std::min( w_split, W_[x.first-1] + x.second );
 		}
+		w_split = std::min(w_split,W_[j-1]);
+		
+		// ------------------------------
+		// WM and WM2: split cases 
+		energy_t wm_split = INF;
+		energy_t wm2_split = INF;
+		for ( auto &x : CL_[j] ) {
+		    size_t k = x.first;
+		    energy_t v_kj =
+			x.second
+			+ E_MLstem(pair_type(k,j),-1,-1,params_);
+
+		    wm_split = std::min( wm_split,
+					 WM_[k-1] + v_kj );
+		    wm_split = std::min( wm_split,
+					 static_cast<energy_t>((k-i)*params_->MLbase) + v_kj );
+
+		    wm2_split = std::min( wm2_split,
+					  WM_[k-1] + v_kj );
+		}
+		
+		wm2_split = std::min( wm2_split, WM2_[j-1] + params_->MLbase );
+		wm_split = std::min( wm_split, WM_[j-1] + params_->MLbase );
+		
+		energy_t w  = w_split; // entry of W w/o contribution of V
+		energy_t wm = wm_split; // entry of W w/o contribution of V
+		
+		size_t i_mod=i%MAXLOOP;
 		
 		int ptype_closing = pair_type(i,j);
 		
-		energy_t c = INF;
-		size_t i_mod=i%MAXLOOP;
+		if(ptype_closing>0) { // if i,j form a canonical base pair
 
-		if(ptype_closing>0) {
-
-		    c = HairpinE(i,j);
-		    V_(i_mod,j) = c;
-
+		    energy_t v_h = HairpinE(i,j);
+		    
+		    // info of best interior loop decomposition (if better than hairpin)
 		    size_t best_l=0;
 		    size_t best_k=0;
 		    energy_t best_e;
+
+		    energy_t v_iloop=INF;
 		    
 		    // constraints for interior loops
 		    // i<k; l<j            
@@ -669,78 +578,88 @@ public:
 		    for ( size_t k=i+1; k<=max_k; k++) {
 			size_t k_mod=k%MAXLOOP;
 			
-			size_t min_l=std::max(k+TURN+1  +MAXLOOP+2, k+j-i)-MAXLOOP-2;
+			size_t min_l=std::max(k+TURN+1 + MAXLOOP+2, k+j-i) - MAXLOOP-2;
 			
 			for (size_t l=min_l; l<j; l++) {
 			    
 			    assert(k-i+j-l-2<=MAXLOOP);
 			    
-			    energy_t c_kl=V_(k_mod,l) + ILoopE(ptype_closing,i,j,k,l) + ILoopBonus_;
-			    if ( c_kl < c ) {
-				c = c_kl;
+			    energy_t v_iloop_kl = 
+				V_(k_mod,l)
+				+ ILoopE(ptype_closing,i,j,k,l);
+			    
+			    if ( v_iloop_kl < v_iloop ) {
+				v_iloop = v_iloop_kl;
 				best_l=l;
 				best_k=k;
 				best_e=V_(k_mod,l);
 			    }
 			}
 		    }
-	    
-		    /*
-		      std::cout << i << " " << j << " " << CL[j].size()
-		      << " " << best_l << " " << best_k
-		      << " " << c << " " << d << std::endl;
-		    */
-		
-		    energy_t c_non_iloop = W_[j-1] + NonILoopPenalty_; // W_(i+1,j-1) is still in W_[j-1] !
-		    //register trace arrows from C-entry (i,j); even for non-candidates 
-		    if ( c_non_iloop < c ) {
-			c = c_non_iloop;
-			register_trace_arrow(i,j,'G',i+1,j-1,W_[j-1]);
-		    } else {
-			if (best_l!=0) { /* not hairpin */
-			    assert(best_k<best_l);
-			    if ( !is_candidateW(best_k,best_l) ) {
-				//std::cout << "Reg TA "<<best_k<<" "<<best_l<<std::endl;
-				register_trace_arrow(i,j,'C',best_k,best_l,best_e);
-			    } else {
-				ta_avoid_++;
-				//std::cout << "Avoid TA "<<best_k<<" "<<best_l<<std::endl;
-			    }
+		    
+		    energy_t v_split =  
+			WM2_[j-1] // here, we access WM2 for row i+1 !!!
+			+ E_MLstem(rtype[ptype_closing],-1,-1,params_)
+			+ params_->MLclosing;
+		    
+		    energy_t v = std::min(v_h,std::min(v_iloop,v_split));
+
+		    energy_t w_v  = v + E_ExtLoop(ptype_closing,-1,-1,params_);
+		    energy_t wm_v = v + E_MLstem(ptype_closing,-1,-1,params_);
+		    
+		    // update w and wm by v
+		    w  = std::min(w_v, w_split);
+		    wm = std::min(wm_v, wm_split);
+		    
+		    // register required trace arrows from (i,j)
+		    if ( v_iloop < std::min(v_h,v_split) ) {
+			if ( is_candidate(best_k,best_l) ) {
+			    //std::cout << "Avoid TA "<<best_k<<" "<<best_l<<std::endl;
+			    ta_.avoid_trace_arrow();
+			} else {
+			    //std::cout << "Reg TA "<<best_k<<" "<<best_l<<std::endl;
+			    ta_.register_trace_arrow(i,j,best_k,best_l,best_e);
 			}
 		    }
 		    
-		    if ( c < d ) {
-			// got a candidate => register candidate
-			CLW_[j].push_back( cand_entry_t(i, c) );
-			//std::cout << "Register candidate "<<i<<" "<<j<<std::endl;
-			inc_source_ref_count(i,j); // <- always keep arrows starting from candidates
-			assert(is_candidateW(i,j));
-		    }
-		}
+		    // check whether (i,j) is a candidate; then register
+		    if ( w_v < w_split
+			 ||
+			 wm_v < wm_split ) {
+			register_candidate( i, j, v );
+			
+			// always keep arrows starting from candidates
+			ta_.inc_source_ref_count(i,j); 
+		    }		    
+
+		    V_(i_mod,j) = v;
 		
-		V_(i_mod,j) = c;
-		W_[j] = std::min(c,d);
-	    }
+		} else {
+		    V_(i_mod,j) = INF;
+		} // end if (i,j form a canonical base pair) 
+		
+		W_[j]       = w;
+		WM_[j]      = wm;
+		WM2_[j]     = wm2_split;
+		
+	    } // end loop j
 	    
 	    // Clean up trace arrows in i+MAXLOOP
 	    if ( i+MAXLOOP <= n_) {
-		gc_row_of_trace_arrows( i + MAXLOOP );
+		ta_.gc_row( i + MAXLOOP );
 	    }
 
 	    // Reallocate candidate lists in i
-	    for ( auto &x: CLW_ ) {
+	    for ( auto &x: CL_ ) {
 		if (x.capacity() > 1.5*x.size()) {
 		    cand_list_t vec(x.size());
 		    copy(x.begin(),x.end(),vec.begin());
 		    vec.swap(x);
 		}
 	    }
-	    for ( auto &x: trace_arrow_ ) {
-		if (x.capacity() > 1.2 * x.size()) {
-		    x.reallocate();
-		}
-	    }
-	}
+	    
+	    ta_.compactify();
+	}	
 	
 	std::cout << "MFE: \t"<<(W_[n_]/100.0)<<std::endl;
     }
@@ -748,7 +667,7 @@ public:
     size_t
     num_of_candidates() const {
 	size_t c=0;
-	for ( auto &x: CLW_ ) {
+	for ( auto &x: CL_ ) {
 	    c += x.size();
 	}
 	return c;
@@ -757,34 +676,16 @@ public:
     size_t
     capacity_of_candidates() const {
 	size_t c=0;
-	for ( auto &x: CLW_ ) {
+	for ( auto &x: CL_ ) {
 	    c += x.capacity();
 	}
 	return c;
     }
-
-    size_t
-    num_of_tas() const {
-	size_t c=0;
-	for ( auto &x: trace_arrow_ ) {
-	    c += x.size();
-	}
-	return c;
+    
+    const TraceArrows &
+    ta() const {
+	return ta_;
     }
-
-    size_t
-    capacity_of_tas() const {
-	size_t c=0;
-	for ( auto &x: trace_arrow_ ) {
-	    c += x.capacity();
-	}
-	return c;
-    }
-
-    size_t ta_count() const {return ta_count_;}
-    size_t ta_erase() const {return ta_erase_;}
-    size_t ta_avoid() const {return ta_avoid_;}
-    size_t ta_max() const {return ta_max_;}
     
 };
 
@@ -813,27 +714,26 @@ main(int argc,char **argv) {
     const std::string unit=" kB";
 
     std::cout << "[Unsp:\t"<< 2* n*(n+1)/2 * sizeof(int)/factor<<unit<<"]"<<std::endl;
-    std::cout << "W:\t"<<n*sizeof(HalfZuker::energy_t)/factor<<unit<<std::endl;
-    std::cout << "V:\t"<<n*sizeof(HalfZuker::energy_t)*MAXLOOP/factor<<unit<<std::endl;
+    std::cout << "W:\t"<<n*sizeof(energy_t)/factor<<unit<<std::endl;
+    std::cout << "V:\t"<<n*sizeof(energy_t)*MAXLOOP/factor<<unit<<std::endl;
     std::cout << "Cands:\t"<<hz.num_of_candidates()*sizeof(HalfZuker::cand_entry_t)/factor<<unit<<std::endl;
-    //std::cout << "TAs:\t"<<hz.ta_count()*sizeof(HalfZuker::TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
+    //std::cout << "TAs:\t"<<hz.ta_count()*sizeof(TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
-    std::cout << "TAs+ov:\t"<<hz.ta_count()*(sizeof(HalfZuker::TraceArrow)+8)/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
+    std::cout << "TAs+ov:\t"<<hz.ta().size()*(sizeof(TraceArrow)+8)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
     // trace arrows with overhead of maps
-    // std::cout << "TAs+map ov:\t"<<(n*48+hz.ta_count()*(32+sizeof(size_t)+sizeof(HalfZuker::TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(HalfZuker::TraceArrow)<<std::endl;
+    // std::cout << "TAs+map ov:\t"<<(n*48+hz.ta_count()*(32+sizeof(size_t)+sizeof(TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
-    std::cout << "TA cnt:\t"<<hz.ta_count()<<std::endl;
-    std::cout << "TA max:\t"<<hz.ta_max()<<std::endl;
-    std::cout << "TA av:\t"<<hz.ta_avoid()<<std::endl;
-    std::cout << "TA rm:\t"<<hz.ta_erase()<<std::endl;
+    std::cout << "TA cnt:\t"<<hz.ta().size()<<std::endl;
+    std::cout << "TA max:\t"<<hz.ta().max()<<std::endl;
+    std::cout << "TA av:\t"<<hz.ta().avoided()<<std::endl;
+    std::cout << "TA rm:\t"<<hz.ta().erased()<<std::endl;
     
     std::cout <<std::endl;
     std::cout << "Can num:\t"<<hz.num_of_candidates()<<std::endl;
     std::cout << "Can cap:\t"<<hz.capacity_of_candidates()<<std::endl;
-    std::cout << "TAs num:\t"<<hz.num_of_tas()<<std::endl;
-    std::cout << "TAs cap:\t"<<hz.capacity_of_tas()<<std::endl;
+    std::cout << "TAs num:\t"<<hz.ta().size()<<std::endl;
+    std::cout << "TAs cap:\t"<<hz.ta().capacity()<<std::endl;
 
     return 0;
 }
-
