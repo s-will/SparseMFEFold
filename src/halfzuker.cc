@@ -61,16 +61,10 @@
 #include <vector>
 #include <iterator>
 
-//#include <map>
-//#include <unordered_map>
-
 #include <cstring>
+#include <cassert>
 
-#include "simple_map.hh"
-
-//! type of energy
-typedef int energy_t;
-
+#include "base.hh"
 #include "trace_arrow.hh"
 
 extern "C" {
@@ -78,13 +72,6 @@ extern "C" {
 #   include "ViennaRNA/loop_energies.h"
 }
 
-
-template<class T1,class T2>
-std::ostream &
-operator << (std::ostream &out, const std::pair<T1,T2> &x) {
-    out<<"("<<x.first<<","<<x.second<<")";
-    return out;
-}
 
 class HalfZuker {
 

@@ -1,7 +1,8 @@
 bin_PROGRAMS=halfzuker
 
 # base sources, common to all programs
-halfzuker_SOURCES=halfzuker.cc simple_map.hh trace_arrow.hh
+halfzuker_SOURCES=halfzuker.cc base.hh simple_map.hh trace_arrow.hh	\
+trace_arrow.cc
 
 ############################################################
 ## gengetopt command line parsers
