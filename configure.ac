@@ -3,7 +3,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT([HalfZuker], [0.1], [])
+AC_INIT([sweetener], [0.2], [])
 
 # special dir for aux config files 
 AC_CONFIG_AUX_DIR(config)
@@ -69,12 +69,11 @@ fi
 
 
 # configure for use of LocARNA library
-PKG_CHECK_MODULES([LOCARNA], [LocARNA-1.3 >= 1.8.0])
-
-CPPFLAGS="$CPPFLAGS"
-CXXFLAGS="$CXXFLAGS $LOCARNA_CFLAGS"
-LDFLAGS="$LDFLAGS $LOCARNA_LIBS"
-LIBS="-lLocARNA-1.3 $LIBS"
+#PKG_CHECK_MODULES([LOCARNA], [LocARNA-1.3 >= 1.8.0])
+#
+#CXXFLAGS="$CXXFLAGS $LOCARNA_CFLAGS"
+#LDFLAGS="$LDFLAGS $LOCARNA_LIBS"
+#LIBS="-lLocARNA-1.3 $LIBS"
 
 
 ## ========================================

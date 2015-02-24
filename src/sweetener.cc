@@ -1,60 +1,70 @@
-/**
-  Space-efficient sparse variant of an RNA (loop-based) free energy minimization
-  algorithm (RNA folding equivalent to the Zuker algorithm).
+/** 
+ * @mainpage 
+ *
+ * Space-efficient sparse variant of an RNA (loop-based) free energy
+ * minimization algorithm (RNA folding equivalent to the Zuker
+ * algorithm).
+ *
+ * The results are equivalent to RNAfold -d0.
+ *
+ * Demonstration of space-efficient sparsification with trace-back.
+ * 
+ * Since many matrix entries can not be efficiently recomputed in
+ * trace back, we store trace arrows to such entries. To save space,
+ * trace arrows are gc'ed and trace arrows to candidates are omitted
+ * and reconstructed in trace back.
+ *
+ * ----------------------------------------
+ * Specific recursions:
   
-  The results are equivalent to RNAfold -d0.
-  
-  Demonstration of space-efficient sparsification with trace-back.
-  
-  Since many matrix entries can not be efficiently recomputed in trace back, we store
-  trace arrows to such entries. To save space, trace arrows are gc'ed and
-  trace arrows to candidates are omitted and reconstructed in trace back.
-
-  // ----------------------------------------
-  // Specific recursions:
-  //
-  W(i,j) = min { W(i,j-1),
-                 min_i<k<j  W(i,k-1) + V(k,j), <-- W (same i), CLW
-                 V(i,j)
+  W(i,j) = min { W(i,j-1);
+                 min_i<k<j  W(i,k-1) + V(k,j) <-- W (same i), CLW;
+                 V(i,j);
 		 0 if i>=j-m
 		 }
 
-  V(i,j) = min { HairpinE(i,j),
-		 min_kl V(i,j)+ILoopE(i,j,k,l), <-- TAs
-		 WM2(i+1,j-1) + a       <-- WM2[(i+1)%2]; no TAs
+  V(i,j) = min { HairpinE(i,j);
+		 min_kl V(i,j)+ILoopE(i,j,k,l) <-- TAs;
+		 WM2(i+1,j-1) + a <-- WM2, no TAs;
 		 }
 	       
-  WM(i,j) = min { V(i,j)+b,      <-- candidate in recomp
-		  WM(i,j-1) + c, <-- ! not via candidate list
-                  min_i<k<j (k-i)*c + V(k,j) + b, <-- CLWM   ( trick to save trace arrows )
-                  min_i<k<j  WM(i,k-1) + V(k,j) + b,  <-- WM, CLWM
+  WM(i,j) = min { V(i,j)+b      <-- candidate in recomp;
+		  WM(i,j-1) + c <-- ! not via candidate list;
+                  min_i<k<j (k-i)*c + V(k,j) + b <-- CLWM   ( trick to save trace arrows );
+                  min_i<k<j  WM(i,k-1) + V(k,j) + b  <-- WM, CLWM;
 		  INF if i>=j-m
 		  }
 
-  WM2(i,j) = min{ WM2(i,j-1) + c,
-                  min_i<k<j  WM(i,k-1) + V(k,j) + b },  <-- WM, CLWM; no TAs
+  WM2(i,j) = min{ WM2(i,j-1) + c;
+                  min_i<k<j  WM(i,k-1) + V(k,j) + b }  <-- WM, CLWM, no TAs;
   
-  // ----------------------------------------
-  // Candidate criteria:
-  //
+  * ----------------------------------------
+  * Candidate criteria:
+  *
   (i,j) is a candidate for the split in W if 
   V(i,j)      < min {
-                    W(i,j-1),
+                    W(i,j-1);
 		    min_i<k<j  W(i,k-1) + V(k,j)
                     }
 		    
   (i,j) is a candidate for the split in WM if 
   V(i,j) + b  < min {
-                    WM(i,j-1)+c,
-		    min_i<k<j (k-i)*c + V(k,j) + b,
+                    WM(i,j-1)+c;
+		    min_i<k<j (k-i)*c + V(k,j) + b;
 		    min_i<k<j  WM(i,k-1) + V(k,j) + b
                     }
 
-  For simplicity and space savings, we store all candidates that meet
-  either criterion in the same list.
-*/
+ *
+ * For simplicity and space savings, we store all candidates that
+ * meet either criterion in the same list.
+ */
 
-#include <LocARNA/matrices.hh>
+#include <iostream>
+#include <iomanip>
+
+#include <sstream>
+
+#include <LocARNA/matrix.hh>
 
 #include <limits>
 
@@ -73,10 +83,15 @@ extern "C" {
 }
 
 
-class HalfZuker {
+/**
+ * Space efficient sparsification of Zuker-type RNA folding with
+ * trace-back. Provides methods for the evaluation of dynamic
+ * programming recursions and the trace-back.
+ */
+class Sweetener {
 
 private:
-
+    
     std::string seq_;
     size_t n_;
 
@@ -128,20 +143,13 @@ private:
     is_candidate(size_t i, size_t j) const {
 	const cand_list_t &list = CL_[j];
 	
-	//std::cout << "Check is candidate "<<i<<","<<j<<" in CL of "<<j<<": ";
-	//for ( auto &x : list ) { std::cout <<x<<", "; }
- 
 	auto it = std::lower_bound(list.begin(),list.end(),i,cand_comp); 
 	
-	bool res = it!=list.end() && it->first==i;
-	
-	//std::cout <<": "<<*it<<" "<<res << std::endl;
-	
-	return res;
+	return it!=list.end() && it->first==i;
     }
     
 public:
-    HalfZuker(const std::string &seq)
+    Sweetener(const std::string &seq)
 	: seq_(seq),
 	  n_(seq.length()),
 	  params_(scale_parameters()),
@@ -168,8 +176,9 @@ public:
     /** 
      * @brief Trace back
      * pre: row 1 of matrix W is computed
+     * @return mfe structure (reference)
      */
-    void
+    const std::string &
     trace_back() {
 	structure_.resize(n_+1,'.');
 
@@ -177,11 +186,10 @@ public:
 	trace_W(1,n_);
 	structure_ = structure_.substr(1,n_);
     
-	std::cout << seq_ << std::endl;
-	std::cout << structure_ << std::endl;
+	return structure_;
     }
 
-    ~HalfZuker() {
+    ~Sweetener() {
 	free(params_);
 	free(S_);
 	free(S1_);
@@ -251,7 +259,7 @@ private:
     recompute_W(size_t i, size_t max_j) {
 	//std::cout << "Compute W " <<i<<" "<<max_j<<std::endl; 
 	
-	for ( size_t j=i-1; j<i+TURN+1; j++ ) { W_[j]=0; }
+	for ( size_t j=i-1; j<=std::min(i+TURN,max_j); j++ ) { W_[j]=0; }
 	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
 	
 	    energy_t w = INF;
@@ -278,8 +286,11 @@ private:
     void
     recompute_WM(size_t i, size_t max_j) {
 	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl; 
+
+	assert(i>=1);
+	assert(max_j<=n_);
 	
-	for ( size_t j=i-1; j<i+TURN+1; j++ ) { WM_[j]=INF; }
+	for ( size_t j=i-1; j<=std::min(i+TURN,max_j); j++ ) { WM_[j]=INF; }
 	
 	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
 	    energy_t wm = INF;
@@ -298,7 +309,7 @@ private:
 	    WM_[j] = wm;
 	}
     }
-
+    
     /**
      * @brief Recompute row of WM2 
      *
@@ -307,15 +318,19 @@ private:
      */
     void
     recompute_WM2(size_t i, size_t max_j) {
-	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl; 
+	//std::cout << "Recompute WM2 " <<i<<" "<<max_j<<std::endl; 
 	
-	for ( size_t j=i-1; j<i+2*TURN+3; j++ ) { WM2_[j]=INF; }
+	assert(i>=1);
+	//assert(i+2*TURN+3<=max_j);
+	assert(max_j<=n_);
+
+	for ( size_t j=i-1; j<=std::min(i+2*TURN+2,max_j); j++ ) { WM2_[j]=INF; }
 	
 	for ( size_t j=i+2*TURN+3; j<=max_j; j++ ) {
 	    energy_t wm2 = INF;
 	    
-	    for ( auto it = CL_[j].begin(); 
-		  CL_[j].end()!=it && it->first>=i ; ++it ) {
+	    for ( auto it = CL_[j].begin();
+		  CL_[j].end()!=it && it->first>i+TURN+1 ; ++it ) {
 		size_t k = it->first;
 		energy_t v_kl=
 		    it->second 
@@ -340,8 +355,14 @@ private:
 	// std::cout << "Trace W "<<i<<" "<<j<<std::endl;
 	if (i+TURN+1>=j) return;
 	
+	// case j unpaired
+	if (W_[j] == W_[j-1]) {
+	    trace_W(i,j-1);
+	    return;
+	}
+	
 	size_t k=j+1;
-	energy_t e=0;
+	energy_t v=INF;
 	
 	// determine best split W -> W V
 	for ( auto it = CL_[j].begin();
@@ -352,22 +373,17 @@ private:
 	    energy_t w = W_[k-1] + v_kj;
 	    
 	    if (W_[j] == w) {
-		e = w;
+		v = it->second;
 		break;
 	    }
 	}
 	
-	// case j unpaired
-	if (W_[j] == W_[j-1]) {
-	    trace_W(i,j-1);
-	    return;
-	}
-	
 	assert(i<=k && k<j);
-	
+	assert(v<INF);
+
 	// don't recompute W, since i is not changed
 	trace_W(i,k-1);
-	trace_V(k,j,e);
+	trace_V(k,j,v);
     }
     
     /** 
@@ -381,6 +397,8 @@ private:
      */
     void
     trace_V( size_t i, size_t j, energy_t e ) {
+	// std::cout << "trace_V "<<i<<" "<<j<<std::endl;
+	
 	assert( i+TURN+1<=j );
 	assert( j<=n_ );
 	
@@ -393,7 +411,11 @@ private:
 	    // trace arrows may exist for interior loop case
 	    const TraceArrow &arrow = ta_.trace_arrow_from(i,j);
 	    
-	    trace_V(arrow.k(i,j),arrow.l(i,j), arrow.target_energy());
+	    size_t k=arrow.k(i,j);
+	    size_t l=arrow.l(i,j);
+	    assert(i<k);
+	    assert(l<j);
+	    trace_V(k,l, arrow.target_energy());
 	    return;
 	    
 	} else {
@@ -413,7 +435,7 @@ private:
 	}
 	
 	// is this a hairpin?
-	if ( V_(i%MAXLOOP,j) == HairpinE(i,j) ) {
+	if ( e == HairpinE(i,j) ) {
 	    return;
 	}
 
@@ -433,6 +455,8 @@ private:
      */
     void
     trace_WM2(size_t i, size_t j) {
+	if (i+2*TURN+3>j) {return;}
+	
 	energy_t e = WM2_[j];
 	
 	// case j unpaired
@@ -446,13 +470,16 @@ private:
 	      CL_[j].end() != it  && it->first>=i+TURN+1; 
 	      ++it ) { 
 	    size_t k = it->first;
-	    if ( e == WM_[k-1] 
-		 + it->second 
-		 + E_MLstem(pair_type(k,j),-1,-1,params_) ) {
+	    energy_t v_kj = 
+		it->second 
+		+ E_MLstem(pair_type(k,j),-1,-1,params_);
+	    if ( e == WM_[k-1] + v_kj ) {
 		trace_WM(i,k-1,WM_[k-1]);
 		trace_V(k,j,it->second);
+		return;
 	    }
 	}
+	assert(false);
     }
     
     /** 
@@ -464,6 +491,8 @@ private:
      */
     void
     trace_WM(size_t i, size_t j, energy_t e) {
+	if (i+TURN+1>j) {return;}
+
 	if ( e == WM_[j-1] + params_->MLbase ) {
 	    trace_WM(i,j-1,WM_[j-1]);
 	    return;
@@ -479,10 +508,13 @@ private:
 		// no recomp, same i
 		trace_WM(i,k-1,WM_[k-1]);
 		trace_V(k,j,it->second);
+		return;
 	    } else if ( e == static_cast<energy_t>((k-i)*params_->MLbase) + v_kj ) {
 		trace_V(k,j,it->second);
+		return;
 	    }
 	}
+	assert(false);
     }
 
     /**
@@ -493,23 +525,27 @@ private:
      */
     void
     register_candidate(size_t i, size_t j, energy_t e) {
+	assert(i<=j+TURN+1);
 	CL_[j].push_back( cand_entry_t(i, e) );
     }
     
 public:
 
     /* recursion evaluation (forward, sparse) */
-    void
-    forward_evaluation() {
-    	
-	for (size_t i=n_; i>0; --i) {
+    energy_t
+    fold() {
+    	for (size_t i=n_; i>0; --i) {
 	    for ( size_t j=i+TURN+1; j<=n_; j++ ) {
-
+		
 		// ------------------------------
 		// W: split case
 		energy_t w_split = INF;
 		for ( auto &x : CL_[j] ) {
-		    w_split = std::min( w_split, W_[x.first-1] + x.second );
+		    size_t k=x.first;
+		    energy_t v_kj =
+			x.second
+			+ E_ExtLoop(pair_type(k,j),-1,-1,params_);
+		    w_split = std::min( w_split, W_[k-1] + v_kj );
 		}
 		w_split = std::min(w_split,W_[j-1]);
 		
@@ -523,25 +559,25 @@ public:
 			x.second
 			+ E_MLstem(pair_type(k,j),-1,-1,params_);
 
-		    wm_split = std::min( wm_split,
-					 WM_[k-1] + v_kj );
+		    wm_split = std::min( wm_split, WM_[k-1] + v_kj );
 		    wm_split = std::min( wm_split,
 					 static_cast<energy_t>((k-i)*params_->MLbase) + v_kj );
 
-		    wm2_split = std::min( wm2_split,
-					  WM_[k-1] + v_kj );
+		    wm2_split = std::min( wm2_split, WM_[k-1] + v_kj );
 		}
 		
 		wm2_split = std::min( wm2_split, WM2_[j-1] + params_->MLbase );
 		wm_split = std::min( wm_split, WM_[j-1] + params_->MLbase );
 		
 		energy_t w  = w_split; // entry of W w/o contribution of V
-		energy_t wm = wm_split; // entry of W w/o contribution of V
+		energy_t wm = wm_split; // entry of WM w/o contribution of V
 		
 		size_t i_mod=i%MAXLOOP;
 		
 		int ptype_closing = pair_type(i,j);
 		
+		// ----------------------------------------
+		// cases with base pair (i,j)
 		if(ptype_closing>0) { // if i,j form a canonical base pair
 
 		    energy_t v_h = HairpinE(i,j);
@@ -604,7 +640,7 @@ public:
 			    //std::cout << "Avoid TA "<<best_k<<" "<<best_l<<std::endl;
 			    ta_.avoid_trace_arrow();
 			} else {
-			    //std::cout << "Reg TA "<<best_k<<" "<<best_l<<std::endl;
+			    //std::cout<<"Reg TA "<<i<<","<<j<<":"<<best_k<<","<<best_l<<std::endl;
 			    ta_.register_trace_arrow(i,j,best_k,best_l,best_e);
 			}
 		    }
@@ -613,12 +649,15 @@ public:
 		    if ( w_v < w_split
 			 ||
 			 wm_v < wm_split ) {
+			
+			//std::cout << "Reg Cand "<<i<<","<<j<<std::endl;
+			
 			register_candidate( i, j, v );
 			
 			// always keep arrows starting from candidates
 			ta_.inc_source_ref_count(i,j); 
 		    }		    
-
+		    
 		    V_(i_mod,j) = v;
 		
 		} else {
@@ -647,8 +686,8 @@ public:
 	    
 	    ta_.compactify();
 	}	
-	
-	std::cout << "MFE: \t"<<(W_[n_]/100.0)<<std::endl;
+
+	return W_[n_];
     }
 
     size_t
@@ -676,7 +715,12 @@ public:
     
 };
 
-
+/**
+ * @brief Simple driver for @see Sweetener. 
+ *
+ * Reads sequence from command line or stdin and calls folding and
+ * trace-back methods of Sweetener.
+ */
 int
 main(int argc,char **argv) {
         
@@ -686,14 +730,20 @@ main(int argc,char **argv) {
     } else {
 	std::getline(std::cin,seq);
     }
-    HalfZuker hz(seq);
+    Sweetener sweetener(seq);
 
     std::cout << seq << std::endl;
-    std::cout << "Len:\t"<<seq.length()<<std::endl<<std::endl;
+    //std::cout << "Len:\t"<<seq.length()<<std::endl<<std::endl;
     
-    hz.forward_evaluation();
+    energy_t mfe = sweetener.fold();
 
-    hz.trace_back();
+    std::string structure = sweetener.trace_back();
+    
+    std::ostringstream smfe;
+    smfe << std::setiosflags(std::ios::fixed) << std::setprecision(2) << mfe/100.0 ;
+    
+    std::cout << structure << " ("<<smfe.str()<<")"<<std::endl;
+    std::cout <<std::endl;
 
     size_t n=seq.length();
     
@@ -703,24 +753,24 @@ main(int argc,char **argv) {
     std::cout << "[Unsp:\t"<< 2* n*(n+1)/2 * sizeof(int)/factor<<unit<<"]"<<std::endl;
     std::cout << "W:\t"<<n*sizeof(energy_t)/factor<<unit<<std::endl;
     std::cout << "V:\t"<<n*sizeof(energy_t)*MAXLOOP/factor<<unit<<std::endl;
-    std::cout << "Cands:\t"<<hz.num_of_candidates()*sizeof(HalfZuker::cand_entry_t)/factor<<unit<<std::endl;
-    //std::cout << "TAs:\t"<<hz.ta_count()*sizeof(TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
+    std::cout << "Cands:\t"<<sweetener.num_of_candidates()*sizeof(Sweetener::cand_entry_t)/factor<<unit<<std::endl;
+    //std::cout << "TAs:\t"<<sweetener.ta_count()*sizeof(TraceArrow)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
-    std::cout << "TAs+ov:\t"<<hz.ta().size()*(sizeof(TraceArrow)+8)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
+    std::cout << "TAs+ov:\t"<<sweetener.ta().size()*(sizeof(TraceArrow)+8)/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
     // trace arrows with overhead of maps
-    // std::cout << "TAs+map ov:\t"<<(n*48+hz.ta_count()*(32+sizeof(size_t)+sizeof(TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
+    // std::cout << "TAs+map ov:\t"<<(n*48+sweetener.ta_count()*(32+sizeof(size_t)+sizeof(TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
-    std::cout << "TA cnt:\t"<<hz.ta().size()<<std::endl;
-    std::cout << "TA max:\t"<<hz.ta().max()<<std::endl;
-    std::cout << "TA av:\t"<<hz.ta().avoided()<<std::endl;
-    std::cout << "TA rm:\t"<<hz.ta().erased()<<std::endl;
+    std::cout << "TA cnt:\t"<<sweetener.ta().size()<<std::endl;
+    std::cout << "TA max:\t"<<sweetener.ta().max()<<std::endl;
+    std::cout << "TA av:\t"<<sweetener.ta().avoided()<<std::endl;
+    std::cout << "TA rm:\t"<<sweetener.ta().erased()<<std::endl;
     
     std::cout <<std::endl;
-    std::cout << "Can num:\t"<<hz.num_of_candidates()<<std::endl;
-    std::cout << "Can cap:\t"<<hz.capacity_of_candidates()<<std::endl;
-    std::cout << "TAs num:\t"<<hz.ta().size()<<std::endl;
-    std::cout << "TAs cap:\t"<<hz.ta().capacity()<<std::endl;
+    std::cout << "Can num:\t"<<sweetener.num_of_candidates()<<std::endl;
+    std::cout << "Can cap:\t"<<sweetener.capacity_of_candidates()<<std::endl;
+    std::cout << "TAs num:\t"<<sweetener.ta().size()<<std::endl;
+    std::cout << "TAs cap:\t"<<sweetener.ta().capacity()<<std::endl;
 
     return 0;
 }

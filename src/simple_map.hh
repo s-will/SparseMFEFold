@@ -5,8 +5,15 @@
 #include <algorithm>
 #include <cassert>
 
-/* space saving replacement for map of trace arrows in rows i;
-   works for our special case */
+/**
+ * @brief Space saving replacement for map of trace arrows in rows
+ * 
+ * Maintains lists of trace arrows in col-idx sorted lists, allowing
+ * log-time access and efficient traversal. Erasing elements is
+ * supported, but takes linear time.  Still, this data structure seems
+ * to be a good compromise, since e.g. balanced trees or hashs require
+ * a lot of space.
+ */
 template<class key_t, class val_t>
 class SimpleMap: std::vector<std::pair<key_t, val_t> > {
     typedef std::pair<key_t, val_t> key_val_t;

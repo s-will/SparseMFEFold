@@ -1,0 +1,62 @@
+Sweetener - Space efficient sparse Zuker-type RNA folding with sparse
+traceback
+
+The program demonstrates the space-efficient sparsification including
+trace-back of an RNA (loop-based) free energy minimization algorithm,
+which performs RNA folding equivalent to RNAfold -d0.
+
+Trace-back from a space efficiently sparsified algorithm is
+non-trivial, since the DP-matrices are never completely stored during
+the forward evaluation of the DP recursions. Thus, the trace-back
+requires recomputation. However, since many matrix entries can not be
+efficiently recomputed in trace back, we store trace arrows to such
+entries. To save space, trace arrows are gc'ed and trace arrows to
+candidates are omitted and reconstructed in trace back.
+
+----------------------------------------
+Specificly, we implement the following Zuker-type recursions,
+where the ranges of minimizations are limited to candidates.
+Furthermore, we do not store the matrices completely, but only
+rows of W, WM, and WM2, as well as the rows i..i+MAXLOOP of V. 
+In addition to these matrix entries, the algorithm stores candidates
+and trace arrows.
+
+W(i,j) = min { W(i,j-1),
+               min_i<k<j  W(i,k-1) + V(k,j), <-- W (same i), CLW
+               V(i,j)
+               0 if i>=j-m
+               }
+
+V(i,j) = min { HairpinE(i,j),
+               min_kl V(i,j)+ILoopE(i,j,k,l), <-- TAs
+               WM2(i+1,j-1) + a       <-- WM2; no TAs
+               }
+               
+WM(i,j) = min { V(i,j)+b,      <-- candidate in recomp
+                WM(i,j-1) + c, <-- ! not via candidate list
+                min_i<k<j (k-i)*c + V(k,j) + b, <-- CLWM   ( trick to save trace arrows )
+                min_i<k<j  WM(i,k-1) + V(k,j) + b,  <-- WM, CLWM
+                INF if i>=j-m
+                }
+
+WM2(i,j) = min{ WM2(i,j-1) + c,
+                min_i<k<j  WM(i,k-1) + V(k,j) + b },  <-- WM, CLWM; no TAs
+
+----------------------------------------
+Candidate criteria:
+
+(i,j) is a candidate for the split in W if 
+V(i,j)      < min {
+                  W(i,j-1),
+                  min_i<k<j  W(i,k-1) + V(k,j)
+                  }
+                    
+(i,j) is a candidate for the split in WM if 
+V(i,j) + b  < min {
+                  WM(i,j-1)+c,
+                  min_i<k<j (k-i)*c + V(k,j) + b,
+                  min_i<k<j  WM(i,k-1) + V(k,j) + b
+                  }
+
+For simplicity and space savings, we store all candidates that meet
+either criterion in the same list.

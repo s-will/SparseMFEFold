@@ -1,8 +1,9 @@
-bin_PROGRAMS=halfzuker
+bin_PROGRAMS=sweetener
 
 # base sources, common to all programs
-halfzuker_SOURCES=halfzuker.cc base.hh simple_map.hh trace_arrow.hh	\
-trace_arrow.cc
+sweetener_SOURCES= \
+	sweetener.cc base.hh simple_map.hh trace_arrow.hh	\
+	trace_arrow.cc LocARNA/matrix.hh
 
 ############################################################
 ## gengetopt command line parsers

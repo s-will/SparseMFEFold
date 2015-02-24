@@ -1,0 +1,8 @@
+0.2	2015-Feb-24
+	RNA folding equivalent to RNAfold -d0; with space efficient
+	sparsification and sparse trace-back
+
+0.1	2015-Feb-21
+	Avoid trace arrows to candidates to save more space; almost
+	Zuker-like RNA folding algorithm (w/o true multi-loops)
+	with space efficient sparse trace-back.
