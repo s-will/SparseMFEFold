@@ -134,8 +134,8 @@ private:
     /** 
      * Test existence of candidate
      * 
-     * @param i row
-     * @param j col
+     * @param i start
+     * @param j end
      * 
      * @return whether (i,j) is candidate for W/WM splits
      */
@@ -402,8 +402,13 @@ private:
 	assert( i+TURN+1<=j );
 	assert( j<=n_ );
 	
-	structure_[i]='(';
-	structure_[j]=')';
+	if (is_candidate(i,j)) {
+	    structure_[i]='[';
+	    structure_[j]=']';	    
+	} else {
+	    structure_[i]='(';
+	    structure_[j]=')';
+	}
 
 	int ptype_closing = pair_type(i,j);
 
