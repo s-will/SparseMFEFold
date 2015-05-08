@@ -3,7 +3,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT([sweetener], [0.2], [])
+AC_INIT([SparseMFEFold], [0.3], [])
 
 # special dir for aux config files 
 AC_CONFIG_AUX_DIR(config)
@@ -46,6 +46,8 @@ DX_INIT_DOXYGEN(HybridPF, Doxyfile, doc)
 ## c++11
 CXXFLAGS="$CXXFLAGS -std=c++11"
 
+# optimization
+CXXFLAGS="$CXXFLAGS -O3 -fomit-frame-pointer"
 
 ##################
 ## Debug option
@@ -92,7 +94,7 @@ AC_ARG_WITH([vrna],
 LIBS="-lRNA $LIBS"
 
 LDFLAGS="$VRNA_LDFLAGS $LDFLAGS"
-CPPFLAGS="$VRNA_CFLAGS $CPPFLAGS"
+CXXFLAGS="$VRNA_CFLAGS $CXXFLAGS"
 
 AC_CHECK_HEADER("ViennaRNA/fold.h",
 	[VRNANOTFOUND=0],
@@ -110,7 +112,7 @@ LIBS="-lz $LIBS"
 AC_OPENMP
 AC_SUBST(OPENMP_CXXFLAGS)
 
-CPPFLAGS="$OPENMP_CXXFLAGS $CPPFLAGS"
+CXXFLAGS="$OPENMP_CXXFLAGS $CXXFLAGS"
 LDFLAGS="$OPENMP_CXXFLAGS $LDFLAGS"
 
 

@@ -1,9 +1,9 @@
-bin_PROGRAMS=sweetener
+bin_PROGRAMS=SparseMFEFold
 
 # base sources, common to all programs
-sweetener_SOURCES= \
-	sweetener.cc base.hh simple_map.hh trace_arrow.hh	\
-	trace_arrow.cc LocARNA/matrix.hh
+SparseMFEFold_SOURCES = SparseMFEFold.cc base.hh simple_map.hh	\
+	trace_arrow.hh trace_arrow.cc LocARNA/matrix.hh		\
+	SparseMFEFold_cmdline.c
 
 ############################################################
 ## gengetopt command line parsers
@@ -22,3 +22,7 @@ CLEANFILES = $(BUILT_SOURCES)
 config.h: ../config.h
 	if [ -e "$@" ] ; then $(RM) $@ ; fi
 	ln -s $< $@
+
+
+SparseMFEFold_cmdline.c: $(srcdir)/SparseMFEFold.ggo 
+	gengetopt < $<

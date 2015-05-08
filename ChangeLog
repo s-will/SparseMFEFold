@@ -1,3 +1,8 @@
+0.3     2015-May
+	Bugfixes
+	Use gengetopt for command line parsing
+	Rename package and program to SparseMFEFold
+
 0.2	2015-Feb-24
 	RNA folding equivalent to RNAfold -d0; with space efficient
 	sparsification and sparse trace-back
