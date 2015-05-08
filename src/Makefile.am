@@ -3,7 +3,7 @@ bin_PROGRAMS=SparseMFEFold
 # base sources, common to all programs
 SparseMFEFold_SOURCES = SparseMFEFold.cc base.hh simple_map.hh	\
 	trace_arrow.hh trace_arrow.cc LocARNA/matrix.hh		\
-	SparseMFEFold_cmdline.c
+	SparseMFEFold_cmdline.c SparseMFEFold_cmdline.h
 
 ############################################################
 ## gengetopt command line parsers

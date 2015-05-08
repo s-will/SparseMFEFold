@@ -2,6 +2,9 @@
 	Bugfixes
 	Use gengetopt for command line parsing
 	Rename package and program to SparseMFEFold
+	Print candidate and trace arrow with option verbose (default off)
+	Mark candidates by square brackets with option mark-candidates (default off)
+	Produce output identitcal to RNAfold -d0 in default mode
 
 0.2	2015-Feb-24
 	RNA folding equivalent to RNAfold -d0; with space efficient
