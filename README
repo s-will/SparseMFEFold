@@ -1,7 +1,17 @@
-Sweetener - Space efficient sparse Zuker-type RNA folding with sparse
+SparseMFEFold
+============================================================
+Space-efficient sparse MFE folding of RNAs with sparse
 traceback
+------------------------------------------------------------
 
-The program demonstrates the space-efficient sparsification including
+Implementation of the method presented in the manuscript
+  Sparse RNA folding revisited: space-efficient minimum free energy prediction
+by Sebastian Will and Hosna Jabbari
+
+Software written by Sebastian Will
+
+
+The program demonstrates space-efficient sparsification including
 trace-back of an RNA (loop-based) free energy minimization algorithm,
 which performs RNA folding equivalent to RNAfold -d0.
 
@@ -13,50 +23,64 @@ efficiently recomputed in trace back, we store trace arrows to such
 entries. To save space, trace arrows are gc'ed and trace arrows to
 candidates are omitted and reconstructed in trace back.
 
+
+
+Installation
+========================================
+
+Please install from source. The package is easy to compile and install via autotool's ./configure; make; make install.
+
+Dependencies: RNA library of the Vienna RNA package 2.x
+
+Help
+========================================
+
+Usage: sparsemfefold[options] [sequence]
+
+Read RNA sequence from stdin or cmdline; predict minimum
+free energy and optimum structure using the time- and
+space-efficient MFE RNA folding algorithm of Will and
+Jabbari, 2015. The results are equivalent to RNAfold -d0,
+but the computation takes less time (for long sequences) and
+much less space.
+
+  -h, --help             Print help and exit
+  -V, --version          Print version and exit
+  -v, --verbose          Turn on verbose output
+  -m, --mark-candidates  Represent candidate base pairs 
+                         by square brackets
+
+The input sequence is read from standard input, unless it is
+given on the command line.
+
+
+Examples
+========================================
+
+Call with sequence from stdin in default mode
+(compatible with RNAfold -d0)
 ----------------------------------------
-Specificly, we implement the following Zuker-type recursions,
-where the ranges of minimizations are limited to candidates.
-Furthermore, we do not store the matrices completely, but only
-rows of W, WM, and WM2, as well as the rows i..i+MAXLOOP of V. 
-In addition to these matrix entries, the algorithm stores candidates
-and trace arrows.
+$ echo UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA \
+       | SparseMFEFold      
+UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA
+.(((((..(..(((.(((((((...))))))).)))...)..))))).... (-6.00)
 
-W(i,j) = min { W(i,j-1),
-               min_i<k<j  W(i,k-1) + V(k,j), <-- W (same i), CLW
-               V(i,j)
-               0 if i>=j-m
-               }
 
-V(i,j) = min { HairpinE(i,j),
-               min_kl V(i,j)+ILoopE(i,j,k,l), <-- TAs
-               WM2(i+1,j-1) + a       <-- WM2; no TAs
-               }
-               
-WM(i,j) = min { V(i,j)+b,      <-- candidate in recomp
-                WM(i,j-1) + c, <-- ! not via candidate list
-                min_i<k<j (k-i)*c + V(k,j) + b, <-- CLWM   ( trick to save trace arrows )
-                min_i<k<j  WM(i,k-1) + V(k,j) + b,  <-- WM, CLWM
-                INF if i>=j-m
-                }
-
-WM2(i,j) = min{ WM2(i,j-1) + c,
-                min_i<k<j  WM(i,k-1) + V(k,j) + b },  <-- WM, CLWM; no TAs
-
+Call with sequence on command line, mark candidates, report trace
+arrow and candidate counts (verbose)
 ----------------------------------------
-Candidate criteria:
 
-(i,j) is a candidate for the split in W if 
-V(i,j)      < min {
-                  W(i,j-1),
-                  min_i<k<j  W(i,k-1) + V(k,j)
-                  }
-                    
-(i,j) is a candidate for the split in WM if 
-V(i,j) + b  < min {
-                  WM(i,j-1)+c,
-                  min_i<k<j (k-i)*c + V(k,j) + b,
-                  min_i<k<j  WM(i,k-1) + V(k,j) + b
-                  }
+$ echo UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA \
+       | SparseMFEFold -m -v
+UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA
+.[[(((..(..[((.[[[([[[...]]])]]].))]...)..)))]].... (-6.00)
 
-For simplicity and space savings, we store all candidates that meet
-either criterion in the same list.
+TA cnt:165
+TA max:167
+TA av:167
+TA rm:6
+
+Can num:109
+Can cap:118
+TAs num:165
+TAs cap:169
