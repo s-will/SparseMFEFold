@@ -104,6 +104,8 @@ private:
     std::string structure_;
     TraceArrows ta_;
 
+    bool garbage_collect_;
+    
     LocARNA::Matrix<energy_t> V_; // store V[i..i+MAXLOOP-1][1..n]
     std::vector<energy_t> W_;
     std::vector<energy_t> WM_;
@@ -153,11 +155,12 @@ private:
     }
     
 public:
-    SparseMFEFold(const std::string &seq)
+    SparseMFEFold(const std::string &seq, bool garbage_collect)
 	: seq_(seq),
 	  n_(seq.length()),
 	  params_(scale_parameters()),
-	  ta_(n_)
+	  ta_(n_),
+          garbage_collect_(garbage_collect)
     {
 	make_pair_matrix();
 
@@ -692,7 +695,7 @@ public:
 	    } // end loop j
 	    
 	    // Clean up trace arrows in i+MAXLOOP+1
-	    if ( i+MAXLOOP+1 <= n_) {
+	    if ( garbage_collect_ && i+MAXLOOP+1 <= n_) {
 		ta_.gc_row( i + MAXLOOP + 1 );
 	    }
 
@@ -762,11 +765,11 @@ main(int argc,char **argv) {
     
     bool verbose;
     verbose = args_info.verbose_given;
-
+    
     bool mark_candidates;
     mark_candidates = args_info.mark_candidates_given;
-
-    SparseMFEFold sparsemfefold(seq);
+    
+    SparseMFEFold sparsemfefold(seq,!args_info.noGC_given);
 
     
     cmdline_parser_free(&args_info);

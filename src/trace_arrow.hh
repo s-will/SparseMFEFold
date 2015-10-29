@@ -62,7 +62,7 @@ public:
 private:    
     trace_arrow_map_t trace_arrow_;
 
-    size_t n_; // sequence length
+    size_t n_; //!< sequence length
     
     size_t ta_count_; // count all generated tas
     size_t ta_avoid_; // count all avoided tas (since they point to candidates)
@@ -72,7 +72,8 @@ private:
 public:
     
     /**
-     * @brief Empty constructor
+     * @brief Construct for sequence of specific length
+     * @param n sequence length
      */
     TraceArrows(size_t n);
     

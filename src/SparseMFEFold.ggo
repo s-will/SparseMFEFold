@@ -1,0 +1,21 @@
+purpose "Time- and space-efficient sparsified minimum free energy folding of RNAs"
+
+usage "[options] [sequence]"
+
+description "Read RNA sequence from stdin or cmdline; predict minimum
+free energy and optimum structure using the time- and space-efficient
+MFE RNA folding algorithm of Will and Jabbari, 2015. The results are
+equivalent to RNAfold -d0, but the computation takes less time (for
+long sequences) and much less space."
+
+option "verbose" v "Turn on verbose output" optional
+option "mark-candidates" m "Represent candidate base pairs by square brackets" optional
+
+option "noGC" - "Turn off garbage collection and related overhead" optional
+
+        
+args "-F SparseMFEFold_cmdline -u"
+
+text "\nThe input sequence is read from standard input, unless it is
+given on the command line.\n"
+
