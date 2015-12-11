@@ -1,0 +1,11 @@
+*~
+configure
+Makefile.in
+_inst
+_build
+aclocal.m4
+config.h.in
+config
+src/Makefile.in
+autom4te.cache
+Doc

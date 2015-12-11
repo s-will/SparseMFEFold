@@ -1,12 +1,14 @@
+============================================================
 SparseMFEFold
 ============================================================
-Space-efficient sparse MFE folding of RNAs with sparse
-traceback
+
+------------------------------------------------------------
+Space-efficient sparse MFE folding of RNAs with sparse traceback
 ------------------------------------------------------------
 
-Implementation of the method presented in the manuscript
-  Sparse RNA folding revisited: space-efficient minimum free energy prediction
-by Sebastian Will and Hosna Jabbari
+Implementation of the method presented in the manuscript Sparse RNA
+folding revisited: space-efficient minimum free energy structure
+prediction by Sebastian Will and Hosna Jabbari
 
 Software written by Sebastian Will
 
