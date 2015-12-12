@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>SparseMFEFold by s-will</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <meta name="viewport" content="width=device-width">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>SparseMFEFold</h1>
+        <p>Space-efficient sparse minimum free energy prediction of RNA secondary structure</p>
+
+        <p class="view"><a href="https://github.com/s-will/SparseMFEFold">View the Project on GitHub <small>s-will/SparseMFEFold</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/s-will/SparseMFEFold/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/s-will/SparseMFEFold/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/s-will/SparseMFEFold">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1></h1>
+
+<h1>
+<a id="sparsemfefold" class="anchor" href="#sparsemfefold" aria-hidden="true"><span class="octicon octicon-link"></span></a>SparseMFEFold</h1>
+
+<hr>
+
+<h2>
+<a id="space-efficient-sparse-mfe-folding-of-rnas-with-sparse-traceback" class="anchor" href="#space-efficient-sparse-mfe-folding-of-rnas-with-sparse-traceback" aria-hidden="true"><span class="octicon octicon-link"></span></a>Space-efficient sparse MFE folding of RNAs with sparse traceback</h2>
+
+<p>Implementation of the method presented in the manuscript Sparse RNA
+folding revisited: space-efficient minimum free energy structure
+prediction by Sebastian Will and Hosna Jabbari</p>
+
+<p>Software written by Sebastian Will</p>
+
+<p>The program demonstrates space-efficient sparsification including
+trace-back of an RNA (loop-based) free energy minimization algorithm,
+which performs RNA folding equivalent to RNAfold -d0.</p>
+
+<p>Trace-back from a space efficiently sparsified algorithm is
+non-trivial, since the DP-matrices are never completely stored during
+the forward evaluation of the DP recursions. Thus, the trace-back
+requires recomputation. However, since many matrix entries can not be
+efficiently recomputed in trace back, we store trace arrows to such
+entries. To save space, trace arrows are gc'ed and trace arrows to
+candidates are omitted and reconstructed in trace back.</p>
+
+<h1>
+<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installation</h1>
+
+<p>Please install from source. The package is easy to compile and install via autotool's ./configure; make; make install.</p>
+
+<p>Dependencies: RNA library of the Vienna RNA package 2.x</p>
+
+<h1>
+<a id="help" class="anchor" href="#help" aria-hidden="true"><span class="octicon octicon-link"></span></a>Help</h1>
+
+<p>Usage: sparsemfefold[options] [sequence]</p>
+
+<p>Read RNA sequence from stdin or cmdline; predict minimum
+free energy and optimum structure using the time- and
+space-efficient MFE RNA folding algorithm of Will and
+Jabbari, 2015. The results are equivalent to RNAfold -d0,
+but the computation takes less time (for long sequences) and
+much less space.</p>
+
+<p>-h, --help             Print help and exit
+  -V, --version          Print version and exit
+  -v, --verbose          Turn on verbose output
+  -m, --mark-candidates  Represent candidate base pairs 
+                         by square brackets</p>
+
+<p>The input sequence is read from standard input, unless it is
+given on the command line.</p>
+
+<h1>
+<a id="examples" class="anchor" href="#examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Examples</h1>
+
+<p>Call with sequence from stdin in default mode</p>
+
+<h2>
+<a id="compatible-with-rnafold--d0" class="anchor" href="#compatible-with-rnafold--d0" aria-hidden="true"><span class="octicon octicon-link"></span></a>(compatible with RNAfold -d0)</h2>
+
+<p>$ echo UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA \
+       | SparseMFEFold<br>
+UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA
+.(((((..(..(((.(((((((...))))))).)))...)..))))).... (-6.00)</p>
+
+<p>Call with sequence on command line, mark candidates, report trace</p>
+
+<h2>
+<a id="arrow-and-candidate-counts-verbose" class="anchor" href="#arrow-and-candidate-counts-verbose" aria-hidden="true"><span class="octicon octicon-link"></span></a>arrow and candidate counts (verbose)</h2>
+
+<p>$ echo UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA \
+       | SparseMFEFold -m -v
+UAACUUAGGGGUUAAAGUUGCAGAUUGUGGCUCUGAAAACACGGGUUCGAA
+.[[(((..(..[((.[[[([[[...]]])]]].))]...)..)))]].... (-6.00)</p>
+
+<p>TA cnt:165
+TA max:167
+TA av:167
+TA rm:6</p>
+
+<p>Can num:109
+Can cap:118
+TAs num:165
+TAs cap:169</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/s-will">s-will</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
