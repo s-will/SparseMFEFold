@@ -4,8 +4,11 @@ dnl  Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.59)
 AC_INIT([SparseMFEFold], [0.4], [])
 
-dnl  special dir for aux config files 
+dnl special dir for aux config files 
 AC_CONFIG_AUX_DIR(config)
+
+dnl special dir for m4
+AC_CONFIG_MACRO_DIR([m4])
 
 AM_INIT_AUTOMAKE
 
@@ -29,7 +32,6 @@ else
    AC_DEFINE(UNUSED,, only for gcc)
 fi
 AC_CHECK_FUNCS(strdup strstr strchr erand48)
-
 
 dnl # ========================================
 dnl # DOXYGEN
