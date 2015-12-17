@@ -1,26 +1,25 @@
-# -*- Autoconf -*-
-
-# Process this file with autoconf to produce a configure script.
+dnl                                                -*- Autoconf -*-
+dnl  Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
 AC_INIT([SparseMFEFold], [0.4], [])
 
-# special dir for aux config files 
+dnl  special dir for aux config files 
 AC_CONFIG_AUX_DIR(config)
 
 AM_INIT_AUTOMAKE
 
 
-# Checks for programs.
+dnl  Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
 
 AC_LANG_CPLUSPLUS
 
-# Checks for header files.
+dnl  Checks for header files.
 AC_HEADER_STDC
 
-## for compiling modified ViennaRNA code
+dnl # for compiling modified ViennaRNA code
 if test "$GCC" = yes; then
    AC_DEFINE(UNUSED, __attribute__ ((unused)), avoid warning about unused variables)
 else
@@ -29,9 +28,9 @@ fi
 AC_CHECK_FUNCS(strdup strstr strchr erand48)
 
 
-## ========================================
-## DOXYGEN
-#
+dnl # ========================================
+dnl # DOXYGEN
+dnl 
 DX_HTML_FEATURE(ON)
 DX_CHM_FEATURE(OFF)
 DX_CHI_FEATURE(OFF)
@@ -43,15 +42,15 @@ DX_PS_FEATURE(OFF)
 DX_INIT_DOXYGEN(HybridPF, Doxyfile, doc)
 
 
-## c++11
+dnl # c++11
 CXXFLAGS="$CXXFLAGS -std=c++11"
 
-# optimization
+dnl  optimization
 CXXFLAGS="$CXXFLAGS -O3 -fomit-frame-pointer"
 
-##################
-## Debug option
-#
+dnl #################
+dnl # Debug option
+dnl 
 AC_MSG_CHECKING([whether to build with debug information])
 debuger=no
 AC_ARG_ENABLE([debug],
@@ -70,19 +69,11 @@ else
 fi
 
 
-# configure for use of LocARNA library
-#PKG_CHECK_MODULES([LOCARNA], [LocARNA-1.3 >= 1.8.0])
-#
-#CXXFLAGS="$CXXFLAGS $LOCARNA_CFLAGS"
-#LDFLAGS="$LDFLAGS $LOCARNA_LIBS"
-#LIBS="-lLocARNA-1.3 $LIBS"
+dnl # ========================================
+dnl # Vienna RNA
+dnl 
 
-
-## ========================================
-## Vienna RNA
-#
-
-# Get Vienna RNA library and include locations
+dnl  Get Vienna RNA library and include locations
 AC_ARG_WITH([vrna],
   [AS_HELP_STRING([--with-vrna],
     [location of the Vienna RNA headers])],
@@ -101,9 +92,9 @@ AC_CHECK_HEADER("ViennaRNA/fold.h",
 	[VRNANOTFOUND=0],
 	[])
 
-# ------------------------------
-# handle open mp support
-#  this is necessary when linking against the vienna lib
+dnl  ------------------------------
+dnl  handle open mp support
+dnl   this is necessary when linking against the vienna lib
 AC_OPENMP
 AC_SUBST(OPENMP_CXXFLAGS)
 
@@ -111,9 +102,9 @@ CXXFLAGS="$OPENMP_CXXFLAGS $CXXFLAGS"
 LDFLAGS="$OPENMP_CXXFLAGS $LDFLAGS"
 
 
-####################
-# Static linking
-#
+dnl ###################
+dnl  Static linking
+dnl 
 AC_MSG_CHECKING([whether to link statically])
 static_linkage=no
 AC_ARG_ENABLE([static],
@@ -129,18 +120,19 @@ if test x"$static_linkage" = x"yes"; then
 fi
 
 
-# Checks for typedefs, structures, and compiler characteristics.
+dnl  Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
 AC_C_CONST
 AC_TYPE_SIZE_T
 
-###############################################################################
-# BEGIN DO NOT COMPILE CHECKS
-###############################################################################
+
+dnl ##############################################################################
+dnl  BEGIN DO NOT COMPILE CHECKS
+dnl ##############################################################################
 
 DEPENDENCYNOTFOUND=0;
 
-# error output if ViennaRNA not found
+dnl  error if ViennaRNA not found
 if test "$VRNANOTFOUND" = "1"; then
         AC_MSG_NOTICE()
         AC_MSG_NOTICE([The Vienna RNA library is missing.])
@@ -148,7 +140,7 @@ if test "$VRNANOTFOUND" = "1"; then
         DEPENDENCYNOTFOUND=1;
 fi
 
-# error ABORT if on of the libraries was not found
+dnl  error if on of the libraries was not found
 if test "$DEPENDENCYNOTFOUND" = "1"; then
         AC_MSG_NOTICE()
         AC_MSG_ERROR([library not found! Try './configure --help'.])
