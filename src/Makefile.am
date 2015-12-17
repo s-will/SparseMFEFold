@@ -9,7 +9,7 @@ SparseMFEFold_SOURCES = SparseMFEFold.cc base.hh simple_map.hh	\
 ## gengetopt command line parsers
 ##
 ## register parsers and config.h as built sources
-BUILT_SOURCES =
+BUILT_SOURCES = SparseMFEFold_cmdline.c SparseMFEFold_cmdline.h
 #
 ## register built sources as cleanfiles (otherwise they would not be
 ## removed by 'make clean')
@@ -24,5 +24,5 @@ config.h: ../config.h
 	ln -s $< $@
 
 
-SparseMFEFold_cmdline.c: $(srcdir)/SparseMFEFold.ggo 
+SparseMFEFold_cmdline.c SparseMFEFold_cmdline.h: $(srcdir)/SparseMFEFold.ggo 
 	gengetopt < $<
