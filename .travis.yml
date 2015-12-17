@@ -6,7 +6,7 @@ compiler:
 
 before_install:
    - sudo apt-add-repository -y ppa:j-4/vienna-rna
-   - sudo apt-add-repository -y ppa:ubuntu/ubuntu-toolchain-r
+   - sudo apt-add-repository -y ppa:ubuntu-toolchain-r
    - sudo apt-get update -q -y
    - sudo apt-get install -q -y vienna-rna
    - sudo apt-get install -q -y gcc-5 g++-5 clang 
