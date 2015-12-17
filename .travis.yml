@@ -9,11 +9,11 @@ before_install:
    - sudo apt-add-repository -y ppa:ubuntu-toolchain-r
    - sudo apt-get update -q -y
    - sudo apt-get install -q -y vienna-rna
-   - sudo apt-get install -q -y gcc-5 g++-5 clang 
+   - sudo apt-get install -q -y gcc-4.8 g++-4.8 clang 
    - sudo apt-get install -q -y help2man pkg-config gengetopt
 
 install:
-  - if [ "$CXX" = "g++" ]; then export CXX="g++-5" CC="gcc-5"; fi
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-4.8" CC="gcc-4.8"; fi
 
 before_script:
   - autoreconf -i
