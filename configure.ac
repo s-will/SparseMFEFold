@@ -72,36 +72,24 @@ fi
 
 dnl # ========================================
 dnl # Vienna RNA
-dnl 
+dnl rely on pkg-config
 
-dnl  Get Vienna RNA library and include locations
-AC_ARG_WITH([vrna],
-  [AS_HELP_STRING([--with-vrna],
-    [location of the Vienna RNA headers])],
-  [VRNA_HOME=$withval;
-   VRNA_CFLAGS="-I$withval/include"; 
-   VRNA_LDFLAGS="-L$withval/lib"],
-  [])
+dnl check whether pkg-config is available 
+AC_CHECK_PROG([PKG_CONFIG_AVAILABLE],pkg-config,[true],[false])
 
-LIBS="-lRNA $LIBS"
+VRNALIB_OK=false
 
-LDFLAGS="$VRNA_LDFLAGS $LDFLAGS"
-CXXFLAGS="$VRNA_CFLAGS $CXXFLAGS"
+AS_IF([test "$PKG_CONFIG_AVAILABLE" = "true"],[
+   dnl call pkg-config (macro PKG_CHECK_MODULES) to set VRNA_LIBS and VRNA_CFLAGS
+   PKG_CHECK_MODULES([VRNA],[RNAlib2 >= 2.1.9],[VRNALIB_OK=true],[VRNALIB_OK=false])
+   dnl replace ViennaRNA add end of include path -- use perl, since we require it anyway
+   dnl This fixes a legacy problem in ViennaRNA <2.2.x pkg-config files
+   VRNA_CFLAGS=$(echo $VRNA_CFLAGS | perl -ne 's/(-I.*)\/ViennaRNA(\/\s|\s|$)/\1\2/g;print')
 
-AC_CHECK_HEADER("ViennaRNA/fold.h",
-	[VRNANOTFOUND=0],
-	[VRNANOTFOUND=0],
-	[])
-
-dnl  ------------------------------
-dnl  handle open mp support
-dnl   this is necessary when linking against the vienna lib
-AC_OPENMP
-AC_SUBST(OPENMP_CXXFLAGS)
-
-CXXFLAGS="$OPENMP_CXXFLAGS $CXXFLAGS"
-LDFLAGS="$OPENMP_CXXFLAGS $LDFLAGS"
-
+   CXXFLAGS="$VRNA_CFLAGS $CXXFLAGS"
+   LDFLAGS="$VRNA_LDFLAGS $LDFLAGS"
+   LIBS="$VRNA_LIBS $LIBS"
+])
 
 dnl ###################
 dnl  Static linking
@@ -134,9 +122,9 @@ dnl ############################################################################
 DEPENDENCYNOTFOUND=0;
 
 dnl  error if ViennaRNA not found
-if test "$VRNANOTFOUND" = "1"; then
+if test "$VRNLIB_OK" = "false"; then
         AC_MSG_NOTICE()
-        AC_MSG_NOTICE([The Vienna RNA library is missing.])
+        AC_MSG_NOTICE([The Vienna RNA library (or pkg-config) is missing.])
         AC_MSG_NOTICE()
         DEPENDENCYNOTFOUND=1;
 fi

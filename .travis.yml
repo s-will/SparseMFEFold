@@ -15,6 +15,7 @@ addons:
     packages:
       - vienna-rna
       - help2man
+      - pkg-config
       - gengetopt
       - gcc-5
       - g++-5
