@@ -101,11 +101,6 @@ AC_CHECK_HEADER("ViennaRNA/fold.h",
 	[VRNANOTFOUND=0],
 	[])
 
-## ========================================
-## zlib
-AC_CHECK_LIB([z],[main],[HAVE_ZLIB="yes"])
-LIBS="-lz $LIBS"
-
 # ------------------------------
 # handle open mp support
 #  this is necessary when linking against the vienna lib
@@ -151,12 +146,6 @@ if test "$VRNANOTFOUND" = "1"; then
         AC_MSG_NOTICE([The Vienna RNA library is missing.])
         AC_MSG_NOTICE()
         DEPENDENCYNOTFOUND=1;
-fi
-
-if test "$HAVE_ZLIB" != "yes" ; then
-        DEPENDENCYNOTFOUND=1;   
-        AC_MSG_NOTICE()
-        AC_MSG_NOTICE([Zlib is missing.])
 fi
 
 # error ABORT if on of the libraries was not found
