@@ -46,10 +46,6 @@ DX_PDF_FEATURE(OFF)
 DX_PS_FEATURE(OFF)
 DX_INIT_DOXYGEN(HybridPF, Doxyfile, doc)
 
-
-dnl # c++11
-dnl CXXFLAGS="$CXXFLAGS -std=c++11"
-
 dnl  optimization
 CXXFLAGS="$CXXFLAGS -O3 -fomit-frame-pointer"
 
