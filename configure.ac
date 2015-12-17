@@ -14,6 +14,9 @@ dnl  Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
 
+dnl TURN ON C++11
+AX_CXX_COMPILE_STDCXX_11
+
 AC_LANG_CPLUSPLUS
 
 dnl  Checks for header files.
@@ -43,7 +46,7 @@ DX_INIT_DOXYGEN(HybridPF, Doxyfile, doc)
 
 
 dnl # c++11
-CXXFLAGS="$CXXFLAGS -std=c++11"
+dnl CXXFLAGS="$CXXFLAGS -std=c++11"
 
 dnl  optimization
 CXXFLAGS="$CXXFLAGS -O3 -fomit-frame-pointer"
