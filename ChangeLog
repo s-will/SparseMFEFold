@@ -1,3 +1,8 @@
+0.5	2016-Apr
+	change handling of Vienna RNA lib in configure: use pkg-config
+	fix distribution to include all necessary files
+	add Travis support for CI testing on github
+	clean dependencies
 0.4	2015-Nov
 	add option --noGC to turn off garbage collection
 0.3     2015-May

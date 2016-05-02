@@ -2,7 +2,7 @@ dnl                                                -*- Autoconf -*-
 dnl  Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT([SparseMFEFold], [0.4], [])
+AC_INIT([SparseMFEFold], [0.5], [])
 
 dnl special dir for aux config files 
 AC_CONFIG_AUX_DIR(config)
@@ -81,10 +81,7 @@ VRNALIB_OK=false
 
 AS_IF([test "$PKG_CONFIG_AVAILABLE" = "true"],[
    dnl call pkg-config (macro PKG_CHECK_MODULES) to set VRNA_LIBS and VRNA_CFLAGS
-   PKG_CHECK_MODULES([VRNA],[RNAlib2 >= 2.1.9],[VRNALIB_OK=true],[VRNALIB_OK=false])
-   dnl replace ViennaRNA add end of include path -- use perl, since we require it anyway
-   dnl This fixes a legacy problem in ViennaRNA <2.2.x pkg-config files
-   VRNA_CFLAGS=$(echo $VRNA_CFLAGS | perl -ne 's/(-I.*)\/ViennaRNA(\/\s|\s|$)/\1\2/g;print')
+   PKG_CHECK_MODULES([VRNA],[RNAlib2 >= 2.2.5],[VRNALIB_OK=true],[VRNALIB_OK=false])
 
    CXXFLAGS="$VRNA_CFLAGS $CXXFLAGS"
    LDFLAGS="$VRNA_LDFLAGS $LDFLAGS"
@@ -122,7 +119,7 @@ dnl ############################################################################
 DEPENDENCYNOTFOUND=0;
 
 dnl  error if ViennaRNA not found
-if test "$VRNLIB_OK" = "false"; then
+if test "$VRNALIB_OK" != "true"; then
         AC_MSG_NOTICE()
         AC_MSG_NOTICE([The Vienna RNA library (or pkg-config) is missing.])
         AC_MSG_NOTICE()
@@ -132,7 +129,8 @@ fi
 dnl  error if on of the libraries was not found
 if test "$DEPENDENCYNOTFOUND" = "1"; then
         AC_MSG_NOTICE()
-        AC_MSG_ERROR([library not found! Try './configure --help'.])
+        AC_MSG_NOTICE([library not found! Install in standard path])
+        AC_MSG_ERROR([or set PKG_CONFIG_PATH appropriately.])
 fi
 
 
