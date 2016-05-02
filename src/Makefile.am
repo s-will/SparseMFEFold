@@ -5,6 +5,8 @@ SparseMFEFold_SOURCES = SparseMFEFold.cc base.hh simple_map.hh	\
 	trace_arrow.hh trace_arrow.cc LocARNA/matrix.hh		\
 	SparseMFEFold_cmdline.c SparseMFEFold_cmdline.h
 
+EXTRA_DIST=SparseMFEFold.ggo
+
 ############################################################
 ## gengetopt command line parsers
 ##
