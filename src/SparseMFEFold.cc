@@ -1,5 +1,5 @@
-/** 
- * @mainpage 
+/**
+ * @mainpage
  *
  * Space-efficient sparse variant of an RNA (loop-based) free energy
  * minimization algorithm (RNA folding equivalent to the Zuker
@@ -8,7 +8,7 @@
  * The results are equivalent to RNAfold -d0.
  *
  * Demonstration of space-efficient sparsification with trace-back.
- * 
+ *
  * Since many matrix entries can not be efficiently recomputed in
  * trace back, we store trace arrows to such entries. To save space,
  * trace arrows are gc'ed and trace arrows to candidates are omitted
@@ -16,7 +16,7 @@
  *
  * ----------------------------------------
  * Specific recursions:
-  
+
   W(i,j) = min { W(i,j-1);
                  min_i<k<j  W(i,k-1) + V(k,j) <-- W (same i), CLW;
                  V(i,j);
@@ -27,7 +27,7 @@
 		 min_kl V(i,j)+ILoopE(i,j,k,l) <-- TAs;
 		 WM2(i+1,j-1) + a <-- WM2, no TAs;
 		 }
-	       
+
   WM(i,j) = min { V(i,j)+b      <-- candidate in recomp;
 		  WM(i,j-1) + c <-- ! not via candidate list;
                   min_i<k<j (k-i)*c + V(k,j) + b <-- CLWM   ( trick to save trace arrows );
@@ -37,17 +37,17 @@
 
   WM2(i,j) = min{ WM2(i,j-1) + c;
                   min_i<k<j  WM(i,k-1) + V(k,j) + b }  <-- WM, CLWM, no TAs;
-  
+
   * ----------------------------------------
   * Candidate criteria:
   *
-  (i,j) is a candidate for the split in W if 
+  (i,j) is a candidate for the split in W if
   V(i,j)      < min {
                     W(i,j-1);
 		    min_i<k<j  W(i,k-1) + V(k,j)
                     }
-		    
-  (i,j) is a candidate for the split in WM if 
+
+  (i,j) is a candidate for the split in WM if
   V(i,j) + b  < min {
                     WM(i,j-1)+c;
 		    min_i<k<j (k-i)*c + V(k,j) + b;
@@ -93,26 +93,26 @@ extern "C" {
 class SparseMFEFold {
 
 private:
-    
+
     std::string seq_;
     size_t n_;
 
     short *S_;
     short *S1_;
     paramT *params_;
-    
+
     std::string structure_;
     TraceArrows ta_;
 
     bool garbage_collect_;
-    
+
     LocARNA::Matrix<energy_t> V_; // store V[i..i+MAXLOOP-1][1..n]
     std::vector<energy_t> W_;
     std::vector<energy_t> WM_;
     std::vector<energy_t> WM2_;
 
     bool mark_candidates_;
-    
+
 public:
     typedef unsigned short int cand_pos_t;
     typedef std::pair<cand_pos_t,energy_t> cand_entry_t;
@@ -121,14 +121,14 @@ public:
 private:
     /**
        candidate list for decomposition in W or WM
-       
+
        @note Avoid separate candidate lists CLW and CLWM for split cases in W and
        WM to save even more space; here, this works after
        reformulating the recursions such that both split-cases recurse to
        V-entries. (compare OCTs)
     */
     std::vector< cand_list_t > CL_;
-    
+
     // compare candidate list entries by keys (left index i) in descending order
     struct {
 	bool operator ()(const cand_entry_t &x, size_t y) const {
@@ -136,24 +136,24 @@ private:
 	}
     }
     cand_comp;
-    
-    /** 
+
+    /**
      * Test existence of candidate
-     * 
+     *
      * @param i start
      * @param j end
-     * 
+     *
      * @return whether (i,j) is candidate for W/WM splits
      */
     bool
     is_candidate(size_t i, size_t j) const {
 	const cand_list_t &list = CL_[j];
-	
-	auto it = std::lower_bound(list.begin(),list.end(),i,cand_comp); 
-	
+
+	auto it = std::lower_bound(list.begin(),list.end(),i,cand_comp);
+
 	return it!=list.end() && it->first==i;
     }
-    
+
 public:
     SparseMFEFold(const std::string &seq, bool garbage_collect)
 	: seq_(seq),
@@ -166,21 +166,21 @@ public:
 
 	S_ = encode_sequence(seq.c_str(),0);
 	S1_ = encode_sequence(seq.c_str(),1);
-	
+
 	V_.resize(MAXLOOP+1,n_+1);
 	W_.resize(n_+1,0);
-	
+
 	WM_.resize(n_+1,INF);
 
 	WM2_.resize(n_+1,INF);
 
 	// init candidate lists
 	CL_.resize(n_+1);
-	
+
 	ta_.resize(n_+1);
     }
 
-    /** 
+    /**
      * @brief Trace back
      * pre: row 1 of matrix W is computed
      * @return mfe structure (reference)
@@ -188,13 +188,13 @@ public:
     const std::string &
     trace_back(bool mark_candidates=false) {
 	mark_candidates_=mark_candidates;
-	
+
 	structure_.resize(n_+1,'.');
 
 	/* Traceback */
 	trace_W(1,n_);
 	structure_ = structure_.substr(1,n_);
-    
+
 	return structure_;
     }
 
@@ -209,7 +209,7 @@ private:
     pair_type(size_t i, size_t j) const {
 	return pair[S_[i]][S_[j]];
     }
-   
+
     /* pre: ptype_closing>0 */
     energy_t
     ILoopE(int ptype_closing,size_t i, size_t j, size_t k,  size_t l) const {
@@ -219,12 +219,12 @@ private:
 	assert(k<l);
 	assert(l<j);
 	//assert(l<=len); // don't know len here
-    
+
 	// note: enclosed bp type 'turned around' for lib call
-	int ptype_enclosed = rtype[pair_type(k,l)]; 
-    
+	int ptype_enclosed = rtype[pair_type(k,l)];
+
 	if (ptype_enclosed==0) return INF;
-    
+
 	return
 	    E_IntLoop(k-i-1,j-l-1,
 		      ptype_closing,
@@ -238,17 +238,17 @@ private:
 
     energy_t
     HairpinE(size_t i, size_t j) const {
-    
+
 	assert(1<=i);
 	assert(i<j);
 	//assert(j<=len); // don't know len here
-    
+
 	int ptype_closing = pair_type(i,j);
-    
+
 	if (ptype_closing==0) return INF;
-    
+
 	return
-	    E_Hairpin(j-i-1, 
+	    E_Hairpin(j-i-1,
 		      ptype_closing,
 		      S1_[i+1],
 		      S1_[j-1],
@@ -266,13 +266,13 @@ private:
      */
     void
     recompute_W(size_t i, size_t max_j) {
-	//std::cout << "Compute W " <<i<<" "<<max_j<<std::endl; 
-	
+	//std::cout << "Compute W " <<i<<" "<<max_j<<std::endl;
+
 	for ( size_t j=i-1; j<=std::min(i+TURN,max_j); j++ ) { W_[j]=0; }
 	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
-	
+
 	    energy_t w = INF;
-	    
+
 	    // note: the loop covers the case W(i,j)=V(i,j),
 	    // since this is in the candidate list (TBS)
 	    for ( auto it = CL_[j].begin();
@@ -281,30 +281,30 @@ private:
 	    }
 	    // case "j unpaired" is not in the CL (anymore)
 	    w = std::min(w,W_[j-1]);
-	    
+
 	    W_[j] = w;
 	}
     }
-    
+
     /**
-     * @brief Recompute row of WM 
+     * @brief Recompute row of WM
      *
      * @param i row index
      * @param max_j maximum column index
      */
     void
     recompute_WM(size_t i, size_t max_j) {
-	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl; 
+	//std::cout << "Compute WM " <<i<<" "<<max_j<<std::endl;
 
 	assert(i>=1);
 	assert(max_j<=n_);
-	
+
 	for ( size_t j=i-1; j<=std::min(i+TURN,max_j); j++ ) { WM_[j]=INF; }
-	
+
 	for ( size_t j=i+TURN+1; j<=max_j; j++ ) {
 	    energy_t wm = INF;
-	    
-	    for ( auto it = CL_[j].begin(); 
+
+	    for ( auto it = CL_[j].begin();
 		  CL_[j].end()!=it && it->first>=i ; ++it ) {
 		size_t k = it->first;
 		energy_t v_kj =
@@ -314,47 +314,47 @@ private:
 		wm = std::min( wm, WM_[k-1]  + v_kj );
 	    }
 	    wm = std::min(wm, WM_[j-1] + params_->MLbase);
-	    
+
 	    WM_[j] = wm;
 	}
     }
-    
+
     /**
-     * @brief Recompute row of WM2 
+     * @brief Recompute row of WM2
      *
      * @param i row index
      * @param max_j maximum column index
      */
     void
     recompute_WM2(size_t i, size_t max_j) {
-	//std::cout << "Recompute WM2 " <<i<<" "<<max_j<<std::endl; 
-	
+	//std::cout << "Recompute WM2 " <<i<<" "<<max_j<<std::endl;
+
 	assert(i>=1);
 	//assert(i+2*TURN+3<=max_j);
 	assert(max_j<=n_);
 
 	for ( size_t j=i-1; j<=std::min(i+2*TURN+2,max_j); j++ ) { WM2_[j]=INF; }
-	
+
 	for ( size_t j=i+2*TURN+3; j<=max_j; j++ ) {
 	    energy_t wm2 = INF;
-	    
+
 	    for ( auto it = CL_[j].begin();
 		  CL_[j].end()!=it && it->first>i+TURN+1 ; ++it ) {
 		size_t k = it->first;
 		energy_t v_kl=
-		    it->second 
+		    it->second
 		    + E_MLstem(pair_type(k,j),-1,-1,params_);
 		wm2 = std::min( wm2, WM_[k-1]  + v_kl );
 	    }
 	    wm2 = std::min(wm2, WM2_[j-1] + params_->MLbase);
-	    
+
 	    WM2_[j] = wm2;
 	}
     }
-    
-    /** 
+
+    /**
      * @brief Trace from W entry
-     * 
+     *
      * @param i row index
      * @param j column index
      * pre: W contains values of row i in interval i..j
@@ -363,16 +363,16 @@ private:
     trace_W(size_t i, size_t j) {
 	// std::cout << "Trace W "<<i<<" "<<j<<std::endl;
 	if (i+TURN+1>=j) return;
-	
+
 	// case j unpaired
 	if (W_[j] == W_[j-1]) {
 	    trace_W(i,j-1);
 	    return;
 	}
-	
+
 	size_t k=j+1;
 	energy_t v=INF;
-	
+
 	// determine best split W -> W V
 	for ( auto it = CL_[j].begin();
 	      CL_[j].end()!=it && it->first>=i;
@@ -380,13 +380,13 @@ private:
 	    k = it->first;
 	    energy_t v_kj = it->second + E_ExtLoop(pair_type(k,j),-1,-1,params_);
 	    energy_t w = W_[k-1] + v_kj;
-	    
+
 	    if (W_[j] == w) {
 		v = it->second;
 		break;
 	    }
 	}
-	
+
 	assert(i<=k && k<j);
 	assert(v<INF);
 
@@ -394,10 +394,10 @@ private:
 	trace_W(i,k-1);
 	trace_V(k,j,v);
     }
-    
-    /** 
+
+    /**
      * @brief Trace from V entry
-     * 
+     *
      * @param i row index
      * @param j column index
      * @param energy energy in V[i,j]
@@ -407,13 +407,13 @@ private:
     void
     trace_V( size_t i, size_t j, energy_t e ) {
 	// std::cout << "trace_V "<<i<<" "<<j<<std::endl;
-	
+
 	assert( i+TURN+1<=j );
 	assert( j<=n_ );
-	
+
 	if (mark_candidates_ && is_candidate(i,j)) {
 	    structure_[i]='[';
-	    structure_[j]=']';	    
+	    structure_[j]=']';
 	} else {
 	    structure_[i]='(';
 	    structure_[j]=')';
@@ -424,18 +424,18 @@ private:
 	if (ta_.exists_trace_arrow_from(i,j)) {
 	    // trace arrows may exist for interior loop case
 	    const TraceArrow &arrow = ta_.trace_arrow_from(i,j);
-	    
+
 	    size_t k=arrow.k(i,j);
 	    size_t l=arrow.l(i,j);
 	    assert(i<k);
 	    assert(l<j);
 	    trace_V(k,l, arrow.target_energy());
 	    return;
-	    
+
 	} else {
-	    
+
 	    assert(ptype_closing>0);
-	    
+
 	    // try to trace back to a candidate: (still) interior loop case
 	    for ( size_t l=i; l<j; l++) {
 		for ( auto it=CL_[l].begin(); CL_[l].end()!=it && it->first>i; ++it ) {
@@ -447,7 +447,7 @@ private:
 		}
 	    }
 	}
-	
+
 	// is this a hairpin?
 	if ( e == HairpinE(i,j) ) {
 	    return;
@@ -459,10 +459,10 @@ private:
 	recompute_WM2(i+1,j-1);
 	trace_WM2(i+1,j-1);
     }
-    
-    /** 
+
+    /**
      * @brief Trace from WM2
-     * 
+     *
      * @param i row index
      * @param j column index
      * pre: vectors WM and WM2 are recomputed for row i
@@ -470,22 +470,22 @@ private:
     void
     trace_WM2(size_t i, size_t j) {
 	if (i+2*TURN+3>j) {return;}
-	
+
 	energy_t e = WM2_[j];
-	
+
 	// case j unpaired
 	if ( e == WM2_[j-1] + params_->MLbase ) {
 	    // same i, no recomputation
 	    trace_WM2(i,j-1);
 	    return;
 	}
-	
-	for ( auto it=CL_[j].begin(); 
-	      CL_[j].end() != it  && it->first>=i+TURN+1; 
-	      ++it ) { 
+
+	for ( auto it=CL_[j].begin();
+	      CL_[j].end() != it  && it->first>=i+TURN+1;
+	      ++it ) {
 	    size_t k = it->first;
-	    energy_t v_kj = 
-		it->second 
+	    energy_t v_kj =
+		it->second
 		+ E_MLstem(pair_type(k,j),-1,-1,params_);
 	    if ( e == WM_[k-1] + v_kj ) {
 		trace_WM(i,k-1,WM_[k-1]);
@@ -495,10 +495,10 @@ private:
 	}
 	assert(false);
     }
-    
-    /** 
+
+    /**
      * @brief Trace from WM
-     * 
+     *
      * @param i row index
      * @param j column index
      * pre: vector WM is recomputed for row i
@@ -511,12 +511,12 @@ private:
 	    trace_WM(i,j-1,WM_[j-1]);
 	    return;
 	}
-	
-	for ( auto it=CL_[j].begin(); 
+
+	for ( auto it=CL_[j].begin();
 	      CL_[j].end() != it && it->first>=i;
 	      ++it ) {
 	    size_t k = it->first;
-	    energy_t v_kj = it->second 
+	    energy_t v_kj = it->second
 		+ E_MLstem(pair_type(k,j),-1,-1,params_);
 	    if ( e == WM_[k-1] + v_kj ) {
 		// no recomp, same i
@@ -542,7 +542,7 @@ private:
 	assert(i<=j+TURN+1);
 	CL_[j].push_back( cand_entry_t(i, e) );
     }
-    
+
 public:
 
     /* recursion evaluation (forward, sparse) */
@@ -551,7 +551,7 @@ public:
     	for (size_t i=n_; i>0; --i) {
 	    energy_t WM2_ip1_jm1 = INF;
 	    for ( size_t j=i+TURN+1; j<=n_; j++ ) {
-		
+
 		// ------------------------------
 		// W: split case
 		energy_t w_split = INF;
@@ -563,9 +563,9 @@ public:
 		    w_split = std::min( w_split, W_[k-1] + v_kj );
 		}
 		w_split = std::min(w_split,W_[j-1]);
-		
+
 		// ------------------------------
-		// WM and WM2: split cases 
+		// WM and WM2: split cases
 		energy_t wm_split = INF;
 		energy_t wm2_split = INF;
 		for ( auto &x : CL_[j] ) {
@@ -580,33 +580,33 @@ public:
 
 		    wm2_split = std::min( wm2_split, WM_[k-1] + v_kj );
 		}
-		
+
 		wm2_split = std::min( wm2_split, WM2_[j-1] + params_->MLbase );
 		wm_split = std::min( wm_split, WM_[j-1] + params_->MLbase );
-		
+
 		energy_t w  = w_split; // entry of W w/o contribution of V
 		energy_t wm = wm_split; // entry of WM w/o contribution of V
 
-		
+
 		size_t i_mod=i%(MAXLOOP+1);
-		
+
 		int ptype_closing = pair_type(i,j);
-		
+
 		// ----------------------------------------
 		// cases with base pair (i,j)
 		if(ptype_closing>0) { // if i,j form a canonical base pair
 
 		    energy_t v_h = HairpinE(i,j);
-		    
+
 		    // info of best interior loop decomposition (if better than hairpin)
 		    size_t best_l=0;
 		    size_t best_k=0;
 		    energy_t best_e;
 
 		    energy_t v_iloop=INF;
-		    
+
 		    // constraints for interior loops
-		    // i<k; l<j            
+		    // i<k; l<j
 		    // k-i+j-l-2<=MAXLOOP  ==> k <= MAXLOOP+i+1
 		    //            ==> l >= k+j-i-MAXLOOP-2
 		    // l-k>=TURN+1         ==> k <= j-TURN-2
@@ -616,17 +616,17 @@ public:
 		    size_t max_k = std::min(j-TURN-2,i+MAXLOOP+1);
 		    for ( size_t k=i+1; k<=max_k; k++) {
 			size_t k_mod=k%(MAXLOOP+1);
-			
+
 			size_t min_l=std::max(k+TURN+1 + MAXLOOP+2, k+j-i) - MAXLOOP-2;
-			
+
 			for (size_t l=min_l; l<j; l++) {
-			    
+
 			    assert(k-i+j-l-2<=MAXLOOP);
-			    
-			    energy_t v_iloop_kl = 
+
+			    energy_t v_iloop_kl =
 				V_(k_mod,l)
 				+ ILoopE(ptype_closing,i,j,k,l);
-			    
+
 			    if ( v_iloop_kl < v_iloop ) {
 				v_iloop = v_iloop_kl;
 				best_l=l;
@@ -635,7 +635,7 @@ public:
 			    }
 			}
 		    }
-		    
+
 		    energy_t v_split =
 			WM2_ip1_jm1 // this value, conceptually
 				    // WM2(i+1,j-1), is set in the
@@ -643,16 +643,16 @@ public:
 				    // value in array WM2_[] is overwritten
 			+ E_MLstem(rtype[ptype_closing],-1,-1,params_)
 			+ params_->MLclosing;
-		    
+
 		    energy_t v = std::min(v_h,std::min(v_iloop,v_split));
 
 		    energy_t w_v  = v + E_ExtLoop(ptype_closing,-1,-1,params_);
 		    energy_t wm_v = v + E_MLstem(ptype_closing,-1,-1,params_);
-		    
+
 		    // update w and wm by v
 		    w  = std::min(w_v, w_split);
 		    wm = std::min(wm_v, wm_split);
-		    
+
 		    // register required trace arrows from (i,j)
 		    if ( v_iloop < std::min(v_h,v_split) ) {
 			if ( is_candidate(best_k,best_l) ) {
@@ -663,26 +663,26 @@ public:
 			    ta_.register_trace_arrow(i,j,best_k,best_l,best_e);
 			}
 		    }
-		    
+
 		    // check whether (i,j) is a candidate; then register
 		    if ( w_v < w_split
 			 ||
 			 wm_v < wm_split ) {
-			
+
 			//std::cout << "Reg Cand "<<i<<","<<j<<std::endl;
-			
+
 			register_candidate( i, j, v );
-			
+
 			// always keep arrows starting from candidates
-			ta_.inc_source_ref_count(i,j); 
-		    }		    
-		    
+			ta_.inc_source_ref_count(i,j);
+		    }
+
 		    V_(i_mod,j) = v;
-		
+
 		} else {
 		    V_(i_mod,j) = INF;
-		} // end if (i,j form a canonical base pair) 
-		
+		} // end if (i,j form a canonical base pair)
+
 		W_[j]       = w;
 		WM_[j]      = wm;
 
@@ -691,9 +691,9 @@ public:
 				       // the next j-iteration, we
 				       // need this.
 		WM2_[j]     = wm2_split;
-		
+
 	    } // end loop j
-	    
+
 	    // Clean up trace arrows in i+MAXLOOP+1
 	    if ( garbage_collect_ && i+MAXLOOP+1 <= n_) {
 		ta_.gc_row( i + MAXLOOP + 1 );
@@ -707,9 +707,9 @@ public:
 		    vec.swap(x);
 		}
 	    }
-	    
+
 	    ta_.compactify();
-	}	
+	}
 
 	return W_[n_];
     }
@@ -731,16 +731,16 @@ public:
 	}
 	return c;
     }
-    
+
     const TraceArrows &
     ta() const {
 	return ta_;
     }
-    
+
 };
 
 /**
- * @brief Simple driver for @see SparseMFEFold. 
+ * @brief Simple driver for @see SparseMFEFold.
  *
  * Reads sequence from command line or stdin and calls folding and
  * trace-back methods of SparseMFEFold.
@@ -749,12 +749,12 @@ int
 main(int argc,char **argv) {
 
     gengetopt_args_info args_info;
-    
+
     // get options (call gengetopt command line parser)
     if (cmdline_parser (argc, argv, &args_info) != 0) {
 	exit(1);
     }
-    
+
     std::string seq;
     if (args_info.inputs_num>0) {
 	seq=args_info.inputs[0];
@@ -762,32 +762,32 @@ main(int argc,char **argv) {
 	std::getline(std::cin,seq);
     }
 
-    
+
     bool verbose;
     verbose = args_info.verbose_given;
-    
+
     bool mark_candidates;
     mark_candidates = args_info.mark_candidates_given;
-    
+
     SparseMFEFold sparsemfefold(seq,!args_info.noGC_given);
 
-    
+
     cmdline_parser_free(&args_info);
 
     std::cout << seq << std::endl;
     //std::cout << "Len:\t"<<seq.length()<<std::endl<<std::endl;
-    
+
     energy_t mfe = sparsemfefold.fold();
 
     std::string structure = sparsemfefold.trace_back(mark_candidates);
-    
+
     std::ostringstream smfe;
     smfe << std::setw(6) << std::setiosflags(std::ios::fixed) << std::setprecision(2) << mfe/100.0 ;
-    
+
     std::cout << structure << " ("<<smfe.str()<<")"<<std::endl;
-    
+
     size_t n=seq.length();
-    
+
     float factor=1024;
     const std::string unit=" kB";
 
@@ -804,18 +804,18 @@ main(int argc,char **argv) {
 	// // std::cout << "TAs+map ov:\t"<<(n*48+sparsemfefold.ta_count()*(32+sizeof(size_t)+sizeof(TraceArrow)))/factor<<unit<<"; size of ta="<<sizeof(TraceArrow)<<std::endl;
 
 	std::cout <<std::endl;
-	
+
 	std::cout << "TA cnt:\t"<<sparsemfefold.ta().size()<<std::endl;
 	std::cout << "TA max:\t"<<sparsemfefold.ta().max()<<std::endl;
 	std::cout << "TA av:\t"<<sparsemfefold.ta().avoided()<<std::endl;
 	std::cout << "TA rm:\t"<<sparsemfefold.ta().erased()<<std::endl;
-    
+
 	std::cout <<std::endl;
 	std::cout << "Can num:\t"<<sparsemfefold.num_of_candidates()<<std::endl;
 	std::cout << "Can cap:\t"<<sparsemfefold.capacity_of_candidates()<<std::endl;
 	std::cout << "TAs num:\t"<<sparsemfefold.ta().size()<<std::endl;
 	std::cout << "TAs cap:\t"<<sparsemfefold.ta().capacity()<<std::endl;
     }
-    
+
     return 0;
 }

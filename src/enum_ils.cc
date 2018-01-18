@@ -8,7 +8,7 @@ extern "C" {
 #   include "ViennaRNA/loop_energies.h"
 }
 
-int 
+int
 main(int argc,char **argv) {
     paramT *params = scale_parameters();
     make_pair_matrix();
@@ -25,7 +25,7 @@ main(int argc,char **argv) {
 		    //if (l1==0 && l2==0) {continue;}
 
 		    for (int i=1; i<=4; i++) {
-		    
+
 			int e = E_IntLoop(l1,l2,
 					  ptype_closing,
 					  ptype_enclosed,
@@ -45,5 +45,5 @@ main(int argc,char **argv) {
 	    }
 	}
     }
-    
+
 }

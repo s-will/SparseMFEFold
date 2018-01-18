@@ -16,23 +16,23 @@ TraceArrows::resize(size_t n) {
 
 void
 TraceArrows::gc_trace_arrow(size_t i, size_t j) {
-	
+
     assert( trace_arrow_[i].exists(j) );
 
     auto col = trace_arrow_[i].find(j);
-	
+
     const auto &ta = col->second;
-	
+
     if (ta.source_ref_count() == 0) {
 	// get trace arrow from the target if the arrow exists
 	if (exists_trace_arrow_from(ta.k(i,j),ta.l(i,j))) {
 	    auto &target_ta = trace_arrow_from(ta.k(i,j),ta.l(i,j));
-		
+
 	    target_ta.dec_src();
-		
+
 	    gc_trace_arrow(ta.k(i,j),ta.l(i,j));
 	}
-	    
+
 	trace_arrow_[i].erase(col);
 	ta_count_--;
 	ta_erase_++;
@@ -41,9 +41,9 @@ TraceArrows::gc_trace_arrow(size_t i, size_t j) {
 
 
 void
-TraceArrows::gc_row( size_t i ) {	
+TraceArrows::gc_row( size_t i ) {
     assert(i<=n_);
-    
+
     for (size_t j=1; j<=n_ ; j++) {
 	if (! trace_arrow_[i].exists(j)) continue;
 	gc_trace_arrow(i,j);
@@ -76,4 +76,3 @@ TraceArrows::capacity() const {
     }
     return c;
 }
-

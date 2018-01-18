@@ -7,7 +7,7 @@
 
 /**
  * @brief Space saving replacement for map of trace arrows in rows
- * 
+ *
  * Maintains lists of trace arrows in col-idx sorted lists, allowing
  * log-time access and efficient traversal. Erasing elements is
  * supported, but takes linear time.  Still, this data structure seems
@@ -20,7 +20,7 @@ class SimpleMap: std::vector<std::pair<key_t, val_t> > {
     typedef std::vector<key_val_t> key_val_vec_t;
     typedef typename key_val_vec_t::iterator iterator;
     typedef typename key_val_vec_t::const_iterator const_iterator;
-	
+
     class  {
     public:
 	bool
@@ -52,28 +52,28 @@ class SimpleMap: std::vector<std::pair<key_t, val_t> > {
 
 public:
     SimpleMap() {}
-	
-    const_iterator 
-    find(const key_t &key) const { 
+
+    const_iterator
+    find(const key_t &key) const {
 	auto it= binsearch(key_val_vec_t::begin(), key_val_vec_t::end(), key);
 	assert(it == key_val_vec_t::end() || it->first == key);
 	return it;
     };
-	
+
     iterator
-    find(const key_t &key) { 
+    find(const key_t &key) {
 	auto it=binsearch(key_val_vec_t::begin(), key_val_vec_t::end(), key);
 	assert(it == key_val_vec_t::end() || it->first == key);
 	return it;
     };
-    	
+
     bool
     exists(const key_t &key) const {
 	return find(key) != key_val_vec_t::end();
     }
-	
-    /** 
-     * @brief push in ascending order of keys 
+
+    /**
+     * @brief push in ascending order of keys
      * @param key
      * @param val
      *
@@ -84,21 +84,21 @@ public:
 	assert(size()==0||key > key_val_vec_t::operator[](size()-1).first);
 	key_val_vec_t::push_back(key_val_t(key,val));
     }
-	
+
     void
     erase(iterator it) {
 	//std::cout << key_val_vec_t::size()<<" "<<key_val_vec_t::capacity()<<std::endl;
-	    
+
 	// doing only this, wastes space (due to stl-vector allocation strategy)
 	// key_val_vec_t::erase(it);
-	    
+
 	// instead: copy to new space with exactly the right size
 	// (possible optimization: only mark erased entries at
 	// first and delay the copying until it pays off)
 	key_val_vec_t vec(key_val_vec_t::size()-1);
 	iterator target=copy(key_val_vec_t::begin(),it,vec.begin());
 	copy(it+1,key_val_vec_t::end(),target);
-	    
+
 	vec.swap(*this);
     }
 
@@ -106,7 +106,7 @@ public:
     size() const {
 	return key_val_vec_t::size();
     }
-	
+
     size_t
     capacity() const {
 	return key_val_vec_t::capacity();
