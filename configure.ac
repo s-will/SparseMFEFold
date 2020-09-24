@@ -4,7 +4,7 @@ dnl  Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.59)
 AC_INIT([SparseMFEFold], [0.5], [])
 
-dnl special dir for aux config files 
+dnl special dir for aux config files
 AC_CONFIG_AUX_DIR(config)
 
 dnl special dir for m4
@@ -35,7 +35,7 @@ AC_CHECK_FUNCS(strdup strstr strchr erand48)
 
 dnl # ========================================
 dnl # DOXYGEN
-dnl 
+dnl
 DX_HTML_FEATURE(ON)
 DX_CHM_FEATURE(OFF)
 DX_CHI_FEATURE(OFF)
@@ -51,7 +51,7 @@ CXXFLAGS="$CXXFLAGS -O3 -fomit-frame-pointer"
 
 dnl #################
 dnl # Debug option
-dnl 
+dnl
 AC_MSG_CHECKING([whether to build with debug information])
 debuger=no
 AC_ARG_ENABLE([debug],
@@ -69,12 +69,14 @@ else
     AC_DEFINE([NDEBUG], [], [Define to 1 for turning off debugging])
 fi
 
+dnl require gengetopt
+AC_CHECK_PROG([GENGETOPT_AVAILABLE],gengetopt,[true],[false])
 
 dnl # ========================================
 dnl # Vienna RNA
 dnl rely on pkg-config
 
-dnl check whether pkg-config is available 
+dnl check whether pkg-config is available
 AC_CHECK_PROG([PKG_CONFIG_AVAILABLE],pkg-config,[true],[false])
 
 VRNALIB_OK=false
@@ -90,7 +92,7 @@ AS_IF([test "$PKG_CONFIG_AVAILABLE" = "true"],[
 
 dnl ###################
 dnl  Static linking
-dnl 
+dnl
 AC_MSG_CHECKING([whether to link statically])
 static_linkage=no
 AC_ARG_ENABLE([static],
@@ -120,19 +122,23 @@ DEPENDENCYNOTFOUND=0;
 
 dnl  error if ViennaRNA not found
 if test "$VRNALIB_OK" != "true"; then
-        AC_MSG_NOTICE()
-        AC_MSG_NOTICE([The Vienna RNA library (or pkg-config) is missing.])
-        AC_MSG_NOTICE()
-        DEPENDENCYNOTFOUND=1;
+    AC_MSG_NOTICE()
+    AC_MSG_NOTICE([The Vienna RNA library (or pkg-config) is missing.])
+    AC_MSG_NOTICE()
+    DEPENDENCYNOTFOUND=1;
 fi
 
 dnl  error if on of the libraries was not found
 if test "$DEPENDENCYNOTFOUND" = "1"; then
-        AC_MSG_NOTICE()
-        AC_MSG_NOTICE([library not found! Install in standard path])
-        AC_MSG_ERROR([or set PKG_CONFIG_PATH appropriately.])
+    AC_MSG_NOTICE()
+    AC_MSG_NOTICE([library not found! Install in standard path])
+    AC_MSG_ERROR([or set PKG_CONFIG_PATH appropriately.])
 fi
 
+AS_IF([test "$GENGETOPT_AVAILABLE" != "true"],[
+    AC_MSG_NOTICE()
+    AC_MSG_ERROR([gengetopt is required for compilation. Please install.])
+])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile])

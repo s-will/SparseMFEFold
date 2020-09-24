@@ -30,8 +30,23 @@ Installation
 ========================================
 
 Please install from source. The package is easy to compile and install via autotool's ./configure; make; make install.
+After cloning of downloading the archive from github, this requires to set
+up the autotools system by
+```
+auoreconf -i
+```
+If the Vienna RNA package is installed in a non-standard path ```$VIENNA_RNA_HOME```, one would
+typically go on to install in ```$INSTALLDIR``` by
+```
+./configure --prefix $INSTALLDIR PKG_CONFIG_PATH=$VIENNA_RNA_HOME/lib/pkgconfig
+make
+make install
+```
 
-Dependencies: RNA library of the Vienna RNA package 2.x
+
+Dependencies:
+  - RNA library of the Vienna RNA package 2.x
+  - gengetopt
 
 Help
 ========================================
