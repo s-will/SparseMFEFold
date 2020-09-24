@@ -20,11 +20,11 @@ CLEANFILES = $(BUILT_SOURCES)
 #%_cmdline.c: $(srcdir)/%.ggo
 #	gengetopt < $<
 
-## get a copy of config.h in directory src 
+## get a copy of config.h in directory src
 config.h: ../config.h
 	if [ -e "$@" ] ; then $(RM) $@ ; fi
 	ln -s $< $@
 
-
-SparseMFEFold_cmdline.c SparseMFEFold_cmdline.h: $(srcdir)/SparseMFEFold.ggo 
+SparseMFEFold_cmdline.h: SparseMFEFold_cmdline.c
+SparseMFEFold_cmdline.c: $(srcdir)/SparseMFEFold.ggo
 	gengetopt < $<

@@ -1,20 +1,40 @@
 sudo: required
+sudo: false
 dist: trusty
-
 language: cpp
-
 compiler:
   - gcc 
 
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    - llvm-toolchain-trusty-4.0
+    packages:
+    - gcc-7
+    - g++-7
+    - help2man
+    - pkg-config
+    - gengetopt
+
 before_install:
-   - sudo apt-add-repository -y ppa:j-4/vienna-rna
-   - sudo apt-add-repository -y ppa:ubuntu-toolchain-r/test
-   - sudo apt-get update -q -y
-   - sudo apt-get install -q -y vienna-rna
-   - sudo apt-get install -q -y help2man pkg-config gengetopt
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-7" CC="gcc-7"; fi
+    
+  # install vienna rna via conda
+  - wget http://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  - chmod +x miniconda.sh
+  - ./miniconda.sh -b
+  - export CONDA_PATH=$HOME/miniconda3
+  - export PATH=$CONDA_PATH/bin:$PATH
+  - conda update --yes conda
+  - conda install --yes -c bioconda viennarna
+
 
 before_script:
   - autoreconf -i
 
-script: ./configure && make && make check
+script:
+    - ./configure PKG_CONFIG_PATH=${CONDA_PATH}/lib/pkgconfig
+    - make -j${CPU_COUNT}
+    - make check
 
